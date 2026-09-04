@@ -21,6 +21,8 @@ export class AuthService {
       offers: user.offers || '',
       needs: user.needs || '',
       photoUrl: user.photo_url || '',
+      gender: user.gender || '',
+      age: Number(user.age || 0),
       balance: Number(user.balance || 0),
       history,
       reviews,
@@ -122,13 +124,25 @@ export class AuthService {
     return { ok: true };
   }
 
-  async updateProfile(body: { id: number; name: string; city: string; offers: string; needs: string }) {
+  async updateProfile(body: {
+    id: number;
+    name: string;
+    city: string;
+    offers: string;
+    needs: string;
+    gender?: string;
+    age?: number;
+  }) {
+    const age = Number(body.age || 0);
+    if (age > 0 && age < 16) {
+      throw new BadRequestException('Skill4Handel is only for users 16 and older');
+    }
     const result = await db.query(
       `UPDATE users
-       SET name = $1, city = $2, offers = $3, needs = $4, updated_at = NOW()
-       WHERE id = $5
+       SET name = $1, city = $2, offers = $3, needs = $4, gender = $5, age = $6, updated_at = NOW()
+       WHERE id = $7
        RETURNING *`,
-      [body.name, body.city, body.offers, body.needs, body.id],
+      [body.name, body.city, body.offers, body.needs, body.gender || '', age || null, body.id],
     );
     const user = result.rows[0];
     if (!user) throw new UnauthorizedException('User not found');
