@@ -10,6 +10,11 @@ export class ChatController {
     return this.chatService.list(Number(userId));
   }
 
+  @Get('history')
+  history(@Query('userId') userId: string) {
+    return this.chatService.history(Number(userId));
+  }
+
   @Get(':id')
   get(@Param('id') id: string) {
     return this.chatService.get(Number(id));
@@ -18,27 +23,14 @@ export class ChatController {
   @Post('open')
   open(
     @Body()
-    body: {
-      myId: number;
-      myName: string;
-      otherId: number;
-      otherName: string;
-    },
+    body: { myId: number; myName: string; otherId: number; otherName: string },
   ) {
-    return this.chatService.open(
-      Number(body.myId),
-      body.myName,
-      Number(body.otherId),
-      body.otherName,
-    );
+    return this.chatService.open(body.myId, body.myName, body.otherId, body.otherName);
   }
 
   @Post(':id/messages')
-  send(
-    @Param('id') id: string,
-    @Body() body: { fromId: number; text: string },
-  ) {
-    return this.chatService.send(Number(id), Number(body.fromId), body.text);
+  send(@Param('id') id: string, @Body() body: { fromId: number; text: string }) {
+    return this.chatService.send(Number(id), body.fromId, body.text);
   }
 
   @Post(':id/swap')
@@ -47,42 +39,27 @@ export class ChatController {
   }
 
   @Post(':id/swap/respond')
-  respond(
-    @Param('id') id: string,
-    @Body() body: { userId: number; action: 'accepted' | 'rejected' },
-  ) {
+  respond(@Param('id') id: string, @Body() body: { userId: number; action: 'accepted' | 'rejected' }) {
     return this.chatService.respondSwap(Number(id), Number(body.userId), body.action);
   }
 
   @Post(':id/swap/cancel')
-  cancel(
-    @Param('id') id: string,
-    @Body() body: { userId: number },
-  ) {
+  cancel(@Param('id') id: string, @Body() body: { userId: number }) {
     return this.chatService.cancelSwap(Number(id), Number(body.userId));
   }
 
   @Post(':id/swap/done')
-  done(
-    @Param('id') id: string,
-    @Body() body: { userId: number },
-  ) {
+  done(@Param('id') id: string, @Body() body: { userId: number }) {
     return this.chatService.markDone(Number(id), Number(body.userId));
   }
 
   @Post(':id/reviewed')
-  reviewed(
-    @Param('id') id: string,
-    @Body() body: { userId: number },
-  ) {
+  reviewed(@Param('id') id: string, @Body() body: { userId: number }) {
     return this.chatService.markReviewed(Number(id), Number(body.userId));
   }
 
   @Delete(':id')
-  remove(
-    @Param('id') id: string,
-    @Query('userId') userId: string,
-  ) {
+  remove(@Param('id') id: string, @Query('userId') userId: string) {
     return this.chatService.remove(Number(id), Number(userId));
   }
 }

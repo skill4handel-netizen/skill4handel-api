@@ -3,23 +3,25 @@ import { db } from '../db';
 
 @Injectable()
 export class ChatService {
-  private async pendingSwap(chatId: number) {
-    const result = await db.query(
-      'SELECT * FROM exchange_offers WHERE chat_id = $1 ORDER BY id DESC LIMIT 1',
-      [chatId],
-    );
-    const offer = result.rows[0];
-    if (!offer) return null;
+  private mapStatus(status: string) {
     const statusMap: Record<string, string> = {
       PROPOSED: 'pending',
       COUNTERED: 'pending',
       ACCEPTED: 'accepted',
       REJECTED: 'rejected',
-      CANCELLED: 'rejected',
+      CANCELLED: 'cancelled',
       SETTLED: 'completed',
       REVIEWED: 'completed',
     };
+    return statusMap[status] || String(status).toLowerCase();
+  }
+
+  private packOffer(offer: any, chat: any) {
+    if (!offer) return null;
+    const requesterId = Number(chat.requester_id);
+    const proposedBy = Number(offer.proposed_by);
     return {
+      id: offer.id,
       skillRequested: offer.skill_requested,
       skillOffered: offer.skill_offered,
       payWithTokens: offer.pay_with_tokens,
@@ -28,11 +30,34 @@ export class ChatService {
       level: offer.level,
       mode: offer.mode,
       location: offer.location,
-      proposedBy: offer.proposed_by,
-      status: statusMap[offer.status] || String(offer.status).toLowerCase(),
+      proposedBy,
+      proposedByName: proposedBy === Number(chat.user_a_id) ? chat.name_a : chat.name_b,
+      requesterId,
+      requesterName: requesterId === Number(chat.user_a_id) ? chat.name_a : chat.name_b,
+      otherName: proposedBy === Number(chat.user_a_id) ? chat.name_b : chat.name_a,
+      status: this.mapStatus(offer.status),
+      rawStatus: offer.status,
       doneBy: offer.done_by || [],
       reviewedBy: offer.reviewed_by || [],
+      createdAt: offer.created_at,
+      updatedAt: offer.updated_at,
     };
+  }
+
+  private async latestOffer(chatId: number) {
+    const result = await db.query(
+      'SELECT * FROM exchange_offers WHERE chat_id = $1 ORDER BY id DESC LIMIT 1',
+      [chatId],
+    );
+    return result.rows[0] || null;
+  }
+
+  private async pendingSwap(chat: any) {
+    const offer = await this.latestOffer(chat.id);
+    const packed = this.packOffer(offer, chat);
+    if (!packed) return null;
+    if (['completed', 'rejected', 'cancelled'].includes(packed.status)) return null;
+    return packed;
   }
 
   private async pack(chat: any) {
@@ -40,6 +65,12 @@ export class ChatService {
       'SELECT from_id, type, text FROM messages WHERE chat_id = $1 ORDER BY id',
       [chat.id],
     );
+    const offer = await this.latestOffer(chat.id);
+    const packed = this.packOffer(offer, chat);
+    const needsReview =
+      packed &&
+      packed.status === 'completed' &&
+      Array.isArray(packed.reviewedBy);
     return {
       id: chat.id,
       userA: chat.user_a_id,
@@ -48,42 +79,33 @@ export class ChatService {
       nameB: chat.name_b,
       requesterId: chat.requester_id,
       lastMessage: chat.last_message,
-      pendingSwap: await this.pendingSwap(chat.id),
+      pendingSwap: await this.pendingSwap(chat),
+      lastCompleted: packed && packed.status === 'completed' ? packed : null,
       messages: messages.rows.map((row: any) => ({
         type: row.type,
         fromId: row.from_id,
         text: row.text,
       })),
+      needsReview,
     };
   }
 
-  private async assertSwapLimit(userA: number, userB: number) {
-    const pair = await db.query(
-      `SELECT e.status, e.updated_at
+  async history(userId: number) {
+    const result = await db.query(
+      `SELECT e.*, c.user_a_id, c.user_b_id, c.name_a, c.name_b, c.requester_id, c.id AS chat_id
        FROM exchange_offers e
        JOIN chats c ON c.id = e.chat_id
-       WHERE (c.user_a_id = $1 AND c.user_b_id = $2)
-          OR (c.user_a_id = $2 AND c.user_b_id = $1)
-       ORDER BY e.id DESC`,
-      [userA, userB],
+       WHERE (c.user_a_id = $1 OR c.user_b_id = $1)
+         AND e.status IN ('SETTLED', 'REVIEWED', 'REJECTED', 'CANCELLED')
+       ORDER BY e.updated_at DESC`,
+      [userId],
     );
-
-    const lastDone = pair.rows.find((row: any) => ['SETTLED', 'REVIEWED'].includes(row.status));
-    if (lastDone) {
-      const hours = (Date.now() - new Date(lastDone.updated_at).getTime()) / 36e5;
-      if (hours < 24) {
-        throw new BadRequestException('You can start another swap with this person after 24 hours.');
-      }
-    }
-
-    const weekCount = pair.rows.filter((row: any) => {
-      if (!['SETTLED', 'REVIEWED'].includes(row.status)) return false;
-      const days = (Date.now() - new Date(row.updated_at).getTime()) / 864e5;
-      return days <= 7;
-    }).length;
-    if (weekCount >= 3) {
-      throw new BadRequestException('Maximum 3 completed swaps with this person per week.');
-    }
+    return result.rows.map((row: any) => ({
+      ...this.packOffer(row, row),
+      chatId: row.chat_id,
+      otherName: Number(row.user_a_id) === userId ? row.name_b : row.name_a,
+      otherId: Number(row.user_a_id) === userId ? row.user_b_id : row.user_a_id,
+    }));
   }
 
   async list(userId: number) {
@@ -99,7 +121,7 @@ export class ChatService {
         otherId: chat.user_a_id === userId ? chat.user_b_id : chat.user_a_id,
         last: chat.last_message,
         requesterId: chat.requester_id,
-        pendingSwap: await this.pendingSwap(chat.id),
+        pendingSwap: await this.pendingSwap(chat),
       });
     }
     return items;
@@ -132,18 +154,40 @@ export class ChatService {
       `INSERT INTO messages (chat_id, from_id, type, text) VALUES ($1, $2, 'text', $3)`,
       [chatId, fromId, text],
     );
-    await db.query(
-      'UPDATE chats SET last_message = $1, updated_at = NOW() WHERE id = $2',
-      [text, chatId],
-    );
+    await db.query('UPDATE chats SET last_message = $1, updated_at = NOW() WHERE id = $2', [text, chatId]);
     return this.get(chatId);
+  }
+
+  private async assertSwapLimit(userA: number, userB: number) {
+    const pair = await db.query(
+      `SELECT e.status, e.updated_at
+       FROM exchange_offers e
+       JOIN chats c ON c.id = e.chat_id
+       WHERE (c.user_a_id = $1 AND c.user_b_id = $2) OR (c.user_a_id = $2 AND c.user_b_id = $1)
+       ORDER BY e.id DESC`,
+      [userA, userB],
+    );
+    const lastDone = pair.rows.find((row: any) => ['SETTLED', 'REVIEWED'].includes(row.status));
+    if (lastDone) {
+      const hours = (Date.now() - new Date(lastDone.updated_at).getTime()) / 36e5;
+      if (hours < 24) {
+        throw new BadRequestException('You can start another swap with this person after 24 hours.');
+      }
+    }
+    const weekCount = pair.rows.filter((row: any) => {
+      if (!['SETTLED', 'REVIEWED'].includes(row.status)) return false;
+      return (Date.now() - new Date(row.updated_at).getTime()) / 864e5 <= 7;
+    }).length;
+    if (weekCount >= 3) {
+      throw new BadRequestException('Maximum 3 completed swaps with this person per week.');
+    }
   }
 
   async proposeSwap(chatId: number, userId: number, body: any) {
     const chatRes = await db.query('SELECT * FROM chats WHERE id = $1', [chatId]);
     const chat = chatRes.rows[0];
     if (!chat) throw new BadRequestException('Chat not found');
-    const existing = await this.pendingSwap(chatId);
+    const existing = await this.pendingSwap(chat);
     if (!existing && Number(userId) !== Number(chat.requester_id)) {
       throw new BadRequestException('Only the requester can send the first offer');
     }
@@ -154,10 +198,11 @@ export class ChatService {
       throw new BadRequestException('Finish the current swap first');
     }
     await this.assertSwapLimit(chat.user_a_id, chat.user_b_id);
+    const isCounter = !!existing;
     await db.query(
       `INSERT INTO exchange_offers
         (chat_id, proposed_by, skill_requested, skill_offered, pay_with_tokens, extra_tokens, duration, level, mode, location, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'PROPOSED')`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
       [
         chatId,
         userId,
@@ -169,22 +214,21 @@ export class ChatService {
         body.level,
         body.mode,
         body.location || '',
+        isCounter ? 'COUNTERED' : 'PROPOSED',
       ],
     );
     await db.query('UPDATE chats SET last_message = $1, updated_at = NOW() WHERE id = $2', [
-      'New swap offer',
+      isCounter ? 'Counter offer' : 'New swap offer',
       chatId,
     ]);
     return this.get(chatId);
   }
 
   async respondSwap(chatId: number, userId: number, action: 'accepted' | 'rejected') {
-    const offerRes = await db.query(
-      `SELECT * FROM exchange_offers WHERE chat_id = $1 ORDER BY id DESC LIMIT 1`,
-      [chatId],
-    );
-    const offer = offerRes.rows[0];
-    if (!offer || !['PROPOSED', 'COUNTERED'].includes(offer.status)) {
+    const chatRes = await db.query('SELECT * FROM chats WHERE id = $1', [chatId]);
+    const chat = chatRes.rows[0];
+    const offer = await this.latestOffer(chatId);
+    if (!chat || !offer || !['PROPOSED', 'COUNTERED'].includes(offer.status)) {
       throw new BadRequestException('No pending offer');
     }
     if (Number(userId) === Number(offer.proposed_by)) {
@@ -203,11 +247,7 @@ export class ChatService {
   }
 
   async cancelSwap(chatId: number, userId: number) {
-    const offerRes = await db.query(
-      `SELECT * FROM exchange_offers WHERE chat_id = $1 ORDER BY id DESC LIMIT 1`,
-      [chatId],
-    );
-    const offer = offerRes.rows[0];
+    const offer = await this.latestOffer(chatId);
     if (!offer || !['PROPOSED', 'COUNTERED'].includes(offer.status)) {
       throw new BadRequestException('No pending offer to cancel');
     }
@@ -225,31 +265,21 @@ export class ChatService {
   async markDone(chatId: number, userId: number) {
     const chatRes = await db.query('SELECT * FROM chats WHERE id = $1', [chatId]);
     const chat = chatRes.rows[0];
-    const offerRes = await db.query(
-      `SELECT * FROM exchange_offers WHERE chat_id = $1 ORDER BY id DESC LIMIT 1`,
-      [chatId],
-    );
-    const offer = offerRes.rows[0];
+    const offer = await this.latestOffer(chatId);
     if (!chat || !offer || offer.status !== 'ACCEPTED') {
       throw new BadRequestException('Offer is not accepted yet');
     }
-
     const doneBy = new Set<number>(offer.done_by || []);
     doneBy.add(Number(userId));
     const both = doneBy.has(Number(chat.user_a_id)) && doneBy.has(Number(chat.user_b_id));
-
     await db.query(
-      `UPDATE exchange_offers
-       SET done_by = $1, status = $2, updated_at = NOW()
-       WHERE id = $3`,
+      `UPDATE exchange_offers SET done_by = $1, status = $2, updated_at = NOW() WHERE id = $3`,
       [[...doneBy], both ? 'SETTLED' : 'ACCEPTED', offer.id],
     );
-
     if (both && offer.pay_with_tokens && !offer.settled) {
       const amount = Number(offer.extra_tokens) || 0;
       const fromId = Number(offer.proposed_by);
-      const toId =
-        fromId === Number(chat.user_a_id) ? Number(chat.user_b_id) : Number(chat.user_a_id);
+      const toId = fromId === Number(chat.user_a_id) ? Number(chat.user_b_id) : Number(chat.user_a_id);
       if (amount > 0) {
         const client = await db.connect();
         try {
@@ -259,13 +289,8 @@ export class ChatService {
             [offer.id],
           );
           if (!locked.rows[0].settled) {
-            const fromRes = await client.query(
-              'SELECT balance FROM users WHERE id = $1 FOR UPDATE',
-              [fromId],
-            );
-            if (Number(fromRes.rows[0].balance) < amount) {
-              throw new BadRequestException('Not enough tokens');
-            }
+            const fromRes = await client.query('SELECT balance FROM users WHERE id = $1 FOR UPDATE', [fromId]);
+            if (Number(fromRes.rows[0].balance) < amount) throw new BadRequestException('Not enough tokens');
             await client.query('UPDATE users SET balance = balance - $1 WHERE id = $2', [amount, fromId]);
             await client.query('UPDATE users SET balance = balance + $1 WHERE id = $2', [amount, toId]);
             await client.query(
@@ -289,7 +314,6 @@ export class ChatService {
         }
       }
     }
-
     if (both) {
       await db.query('UPDATE chats SET last_message = $1, updated_at = NOW() WHERE id = $2', [
         'Swap completed',
@@ -300,11 +324,7 @@ export class ChatService {
   }
 
   async markReviewed(chatId: number, userId: number) {
-    const offerRes = await db.query(
-      `SELECT * FROM exchange_offers WHERE chat_id = $1 ORDER BY id DESC LIMIT 1`,
-      [chatId],
-    );
-    const offer = offerRes.rows[0];
+    const offer = await this.latestOffer(chatId);
     if (!offer) throw new BadRequestException('Chat not found');
     const reviewedBy = new Set<number>(offer.reviewed_by || []);
     reviewedBy.add(Number(userId));
