@@ -54,4 +54,19 @@ export class AuthController {
   ticket(@Body() body: any) {
     return this.authService.addTicket(body);
   }
+
+  @Get('blocks')
+  blocks(@Query('userId') userId: string) {
+    return this.authService.listBlocks(Number(userId));
+  }
+
+  @Post('block')
+  block(@Body() body: any) {
+    return this.authService.block(Number(body.userId), Number(body.otherId));
+  }
+
+  @Post('unblock')
+  unblock(@Body() body: any) {
+    return this.authService.unblock(Number(body.userId), Number(body.otherId));
+  }
 }

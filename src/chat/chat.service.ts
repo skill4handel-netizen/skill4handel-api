@@ -141,7 +141,14 @@ export class ChatService {
 
   async list(userId: number) {
     const result = await db.query(
-      'SELECT * FROM chats WHERE user_a_id = $1 OR user_b_id = $1 ORDER BY updated_at DESC',
+      `SELECT * FROM chats
+       WHERE (user_a_id = $1 OR user_b_id = $1)
+         AND NOT EXISTS (
+           SELECT 1 FROM blocks
+           WHERE (blocker_id = $1 AND blocked_id = CASE WHEN user_a_id = $1 THEN user_b_id ELSE user_a_id END)
+              OR (blocked_id = $1 AND blocker_id = CASE WHEN user_a_id = $1 THEN user_b_id ELSE user_a_id END)
+         )
+       ORDER BY updated_at DESC`,
       [userId],
     );
     const items = [];
@@ -168,6 +175,14 @@ export class ChatService {
   }
 
   async open(myId: number, myName: string, otherId: number, otherName: string) {
+    const blocked = await db.query(
+      `SELECT id FROM blocks
+       WHERE (blocker_id = $1 AND blocked_id = $2)
+          OR (blocker_id = $2 AND blocked_id = $1)`,
+      [myId, otherId],
+    );
+    if (blocked.rows[0]) throw new BadRequestException('This person is blocked');
+
     const found = await db.query(
       `SELECT * FROM chats
        WHERE (user_a_id = $1 AND user_b_id = $2) OR (user_a_id = $2 AND user_b_id = $1)`,

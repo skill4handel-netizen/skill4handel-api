@@ -225,9 +225,45 @@ export class AuthService {
     return { ok: true };
   }
 
-  async listUsers() {
+  async block(userId: number, otherId: number) {
+    if (!userId || !otherId || userId === otherId) throw new BadRequestException('Invalid block');
+    await db.query(
+      'INSERT INTO blocks (blocker_id, blocked_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+      [userId, otherId],
+    );
+    return { ok: true };
+  }
+
+  async unblock(userId: number, otherId: number) {
+    await db.query('DELETE FROM blocks WHERE blocker_id = $1 AND blocked_id = $2', [userId, otherId]);
+    return { ok: true };
+  }
+
+  async listBlocks(userId: number) {
     const result = await db.query(
-      `SELECT * FROM users WHERE is_suspended = FALSE AND role <> 'admin' ORDER BY id`,
+      `SELECT u.id, u.name, u.email
+       FROM blocks b
+       JOIN users u ON u.id = b.blocked_id
+       WHERE b.blocker_id = $1
+       ORDER BY b.created_at DESC`,
+      [userId],
+    );
+    return result.rows;
+  }
+
+  async listUsers(userId = 0) {
+    const result = await db.query(
+      `SELECT * FROM users
+       WHERE is_suspended = FALSE
+         AND COALESCE(role, 'user') <> 'admin'
+         AND id <> $1
+         AND id <> ALL (
+           SELECT blocked_id FROM blocks WHERE blocker_id = $1
+           UNION
+           SELECT blocker_id FROM blocks WHERE blocked_id = $1
+         )
+       ORDER BY id`,
+      [userId],
     );
     const users = [];
     for (const user of result.rows) {
