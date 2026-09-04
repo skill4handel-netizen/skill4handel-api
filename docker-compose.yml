@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: skill4handel-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: skill4handel
+      POSTGRES_PASSWORD: skill4handel
+      POSTGRES_DB: skill4handel
+    ports:
+      - "5432:5432"
+    volumes:
+      - skill4handel_pg:/var/lib/postgresql/data
+
+volumes:
+  skill4handel_pg:

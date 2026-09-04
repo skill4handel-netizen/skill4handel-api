@@ -1,0 +1,17 @@
+[
+  {
+    "id": 1,
+    "userA": 1,
+    "userB": 3,
+    "nameA": "tester arbatan",
+    "nameB": "tester2",
+    "lastMessage": "hi",
+    "messages": [
+      {
+        "fromId": 1,
+        "text": "hi",
+        "at": "2026-09-01T17:30:40.074Z"
+      }
+    ]
+  }
+]
