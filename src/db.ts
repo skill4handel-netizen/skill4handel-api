@@ -1,9 +1,12 @@
 import pg from 'pg';
 
+const connectionString =
+  process.env.DATABASE_URL ||
+  'postgres://skill4handel:skill4handel@localhost:5432/skill4handel';
+
 export const db = new pg.Pool({
-  host: 'localhost',
-  port: 5432,
-  user: 'skill4handel',
-  password: 'skill4handel',
-  database: 'skill4handel',
+  connectionString,
+  ssl: connectionString.includes('localhost')
+    ? undefined
+    : { rejectUnauthorized: false },
 });
