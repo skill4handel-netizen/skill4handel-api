@@ -58,7 +58,8 @@ export class MatchService {
     const me = meRes.rows[0];
     if (!me) return [];
     const others = await db.query(
-      'SELECT * FROM users WHERE id <> $1 AND is_suspended = FALSE',
+      `SELECT * FROM users
+       WHERE id <> $1 AND is_suspended = FALSE AND role <> 'admin'`,
       [userId],
     );
     return others.rows

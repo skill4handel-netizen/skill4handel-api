@@ -20,7 +20,6 @@ export class AdminController {
     input, button { padding: 8px 10px; margin: 4px 4px 4px 0; }
     table { width: 100%; border-collapse: collapse; font-size: 14px; }
     th, td { border-bottom: 1px solid #eee; padding: 8px; text-align: left; vertical-align: top; }
-    .ok { color: #0a7a32; }
     .bad { color: #b42318; }
   </style>
 </head>
@@ -90,9 +89,16 @@ async function loadAll() {
   ], (row) => row.status !== 'closed' ? '<button onclick="closeTicket('+row.id+')">Close</button>' : '');
   document.getElementById('users').innerHTML = table(users, [
     'id','name','email','city','balance','rating','is_suspended','role'
-  ], (row) => row.role === 'admin' ? '' : (row.is_suspended
-    ? '<button onclick="setUser('+row.id+', false)">Unsuspend</button>'
-    : '<button onclick="setUser('+row.id+', true)">Suspend</button>'));
+  ], (row) => {
+    const roleBtn = row.role === 'admin'
+      ? '<button onclick="setRole('+row.id+', \\'user\\')">Make user</button>'
+      : '<button onclick="setRole('+row.id+', \\'admin\\')">Make admin</button>';
+    const passBtn = '<button onclick="setPassword('+row.id+')">Password</button>';
+    const susBtn = row.role === 'admin' ? '' : (row.is_suspended
+      ? '<button onclick="setUser('+row.id+', false)">Unsuspend</button>'
+      : '<button onclick="setUser('+row.id+', true)">Suspend</button>');
+    return roleBtn + ' ' + passBtn + ' ' + susBtn;
+  });
   document.getElementById('exchanges').innerHTML = table(exchanges, [
     'id','name_a','name_b','skill_requested','status','pay_with_tokens','extra_tokens','settled'
   ]);
@@ -114,6 +120,24 @@ async function setUser(id, suspended) {
     headers: { Authorization: 'Bearer ' + token() }
   });
   loadAll();
+}
+async function setRole(id, role) {
+  await fetch(api + '/admin/users/' + id + '/role', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token() },
+    body: JSON.stringify({ role })
+  });
+  loadAll();
+}
+async function setPassword(id) {
+  const password = prompt('New password');
+  if (!password) return;
+  await fetch(api + '/admin/users/' + id + '/password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token() },
+    body: JSON.stringify({ password })
+  });
+  alert('Password updated');
 }
 if (token()) {
   document.getElementById('login').style.display = 'none';
@@ -143,6 +167,16 @@ if (token()) {
   @Post('users/:id/unsuspend')
   unsuspend(@Param('id') id: string) {
     return this.adminService.setSuspended(Number(id), false);
+  }
+
+  @Post('users/:id/role')
+  setRole(@Param('id') id: string, @Body() body: { role: string }) {
+    return this.adminService.setRole(Number(id), body.role);
+  }
+
+  @Post('users/:id/password')
+  setPassword(@Param('id') id: string, @Body() body: { password: string }) {
+    return this.adminService.setPassword(Number(id), body.password);
   }
 
   @Get('tickets')

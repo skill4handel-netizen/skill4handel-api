@@ -1,7 +1,7 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { createHash } from 'crypto';
 import { db } from '../db';
 import { signToken } from '../auth/token';
-import { createHash } from 'crypto';
 
 @Injectable()
 export class AdminService {
@@ -29,7 +29,8 @@ export class AdminService {
   async listUsers() {
     const result = await db.query(
       `SELECT id, name, email, city, offers, needs, balance, rating, email_verified, is_suspended, role, created_at
-       FROM users ORDER BY id DESC`,
+       FROM users
+       ORDER BY id DESC`,
     );
     return result.rows;
   }
@@ -43,10 +44,33 @@ export class AdminService {
     return { ok: true };
   }
 
+  async setRole(id: number, role: string) {
+    const allowed = ['user', 'admin'];
+    if (!allowed.includes(role)) throw new UnauthorizedException('Invalid role');
+    const result = await db.query(
+      'UPDATE users SET role = $1, updated_at = NOW() WHERE id = $2 RETURNING id',
+      [role, id],
+    );
+    if (!result.rows[0]) throw new UnauthorizedException('User not found');
+    return { ok: true };
+  }
+
+  async setPassword(id: number, password: string) {
+    if (!password || password.length < 4) {
+      throw new UnauthorizedException('Password too short');
+    }
+    await db.query(
+      'UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2',
+      [this.hash(password), id],
+    );
+    return { ok: true };
+  }
+
   async listTickets() {
     const result = await db.query(
       `SELECT id, user_id, name, type, other_name, text, status, created_at
-       FROM tickets ORDER BY id DESC`,
+       FROM tickets
+       ORDER BY id DESC`,
     );
     return result.rows;
   }

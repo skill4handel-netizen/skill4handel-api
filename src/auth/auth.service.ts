@@ -81,7 +81,7 @@ export class AuthService {
       user.id,
       verifyToken,
     ]);
-    console.log(`VERIFY LINK: http://localhost:3000/auth/verify?token=${verifyToken}`);
+    console.log(`VERIFY LINK: https://skill4handel-api.onrender.com/auth/verify?token=${verifyToken}`);
     return { token: signToken(user.id), user: this.publicUser(user) };
   }
 
@@ -217,7 +217,9 @@ export class AuthService {
   }
 
   async listUsers() {
-    const result = await db.query('SELECT * FROM users WHERE is_suspended = FALSE ORDER BY id');
+    const result = await db.query(
+      `SELECT * FROM users WHERE is_suspended = FALSE AND role <> 'admin' ORDER BY id`,
+    );
     const users = [];
     for (const user of result.rows) {
       users.push(this.publicUser(user, await this.reviewsOf(user.id)));
