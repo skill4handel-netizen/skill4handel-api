@@ -16,8 +16,8 @@ export class ChatController {
   }
 
   @Get(':id')
-  get(@Param('id') id: string) {
-    return this.chatService.get(Number(id));
+  get(@Param('id') id: string, @Query('userId') userId: string) {
+    return this.chatService.get(Number(id), userId ? Number(userId) : undefined);
   }
 
   @Post('open')
@@ -39,7 +39,10 @@ export class ChatController {
   }
 
   @Post(':id/swap/respond')
-  respond(@Param('id') id: string, @Body() body: { userId: number; action: 'accepted' | 'rejected' }) {
+  respond(
+    @Param('id') id: string,
+    @Body() body: { userId: number; action: 'accepted' | 'rejected' },
+  ) {
     return this.chatService.respondSwap(Number(id), Number(body.userId), body.action);
   }
 
