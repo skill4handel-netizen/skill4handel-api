@@ -63,15 +63,17 @@ export class AuthService {
     return this.publicUser(user, await this.reviewsOf(user.id), await this.historyOf(user.id));
   }
 
-  async signup(name: string, email: string, password: string) {
+  async signup(name: string, email: string, password: string, age?: number, acceptedTerms?: boolean) {
+    if (!acceptedTerms) throw new BadRequestException('You must accept the terms');
+    if (Number(age || 0) < 16) throw new BadRequestException('You must be 16 or older');
     const cleanEmail = email.trim().toLowerCase();
     const exists = await db.query('SELECT id FROM users WHERE email = $1', [cleanEmail]);
     if (exists.rows[0]) throw new BadRequestException('This email is already registered');
     const created = await db.query(
-      `INSERT INTO users (name, email, password_hash, balance)
-       VALUES ($1, $2, $3, 20)
+      `INSERT INTO users (name, email, password_hash, balance, age, terms_accepted_at)
+       VALUES ($1, $2, $3, 20, $4, NOW())
        RETURNING *`,
-      [name, cleanEmail, this.hash(password)],
+      [name, cleanEmail, this.hash(password), Number(age)],
     );
     const user = created.rows[0];
     await db.query(
@@ -80,10 +82,7 @@ export class AuthService {
       [user.id],
     );
     const verifyToken = Math.random().toString(36).slice(2) + Date.now().toString(36);
-    await db.query('INSERT INTO email_verifications (user_id, token) VALUES ($1, $2)', [
-      user.id,
-      verifyToken,
-    ]);
+    await db.query('INSERT INTO email_verifications (user_id, token) VALUES ($1, $2)', [user.id, verifyToken]);
     console.log(`VERIFY LINK: https://skill4handel-api.onrender.com/auth/verify?token=${verifyToken}`);
     return { token: signToken(user.id), user: this.publicUser(user) };
   }
@@ -159,21 +158,6 @@ export class AuthService {
     return { user: this.publicUser(user, await this.reviewsOf(user.id), await this.historyOf(user.id)) };
   }
 
-  async completeSwap(body: any) {
-    const amount = Number(body.amount) || 0;
-    await db.query('UPDATE users SET balance = balance + $1 WHERE id = $2', [amount, body.userId]);
-    await db.query(
-      `INSERT INTO wallet_transactions (user_id, type, amount, title)
-       VALUES ($1, 'EARN', $2, $3)`,
-      [
-        body.userId,
-        amount,
-        `${body.skill || 'Swap'} with ${body.otherName || ''} (${body.duration || ''} min, ${body.mode || ''})`,
-      ],
-    );
-    return this.me(Number(body.userId));
-  }
-
   async addReview(body: any) {
     if (Number(body.rating) <= 3 && !String(body.text || '').trim()) {
       throw new BadRequestException('A reason is required for 3 stars or less');
@@ -236,7 +220,7 @@ export class AuthService {
     await db.query(
       `INSERT INTO tickets (user_id, name, type, other_name, text)
        VALUES ($1, $2, $3, $4, $5)`,
-      [body.userId, body.name, body.type, body.otherName || '', body.text],
+      [body.userId, body.name, body.type || 'support', body.otherName || '', body.text],
     );
     return { ok: true };
   }

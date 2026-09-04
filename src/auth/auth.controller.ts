@@ -1,6 +1,5 @@
 import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { readToken } from './token';
 
 @Controller('auth')
 export class AuthController {
@@ -11,39 +10,34 @@ export class AuthController {
     return this.authService.me(Number(userId));
   }
 
+  @Post('signup')
+  signup(@Body() body: any) {
+    return this.authService.signup(body.name, body.email, body.password, body.age, body.acceptedTerms);
+  }
+
+  @Post('login')
+  login(@Body() body: any) {
+    return this.authService.login(body.email, body.password);
+  }
+
   @Get('verify')
   verify(@Query('token') token: string) {
     return this.authService.verifyEmail(token);
   }
 
-  @Post('signup')
-  signup(@Body() body: { name: string; email: string; password: string }) {
-    return this.authService.signup(body.name, body.email, body.password);
-  }
-
-  @Post('login')
-  login(@Body() body: { email: string; password: string }) {
-    return this.authService.login(body.email, body.password);
-  }
-
   @Post('forgot-password')
-  forgot(@Body() body: { email: string; password: string }) {
+  forgot(@Body() body: any) {
     return this.authService.forgotPassword(body.email, body.password);
   }
 
   @Post('profile')
-  profile(@Body() body: { id: number; name: string; city: string; offers: string; needs: string }) {
+  profile(@Body() body: any) {
     return this.authService.updateProfile(body);
   }
 
   @Post('photo')
-  photo(@Body() body: { id: number; photoUrl: string }) {
+  photo(@Body() body: any) {
     return this.authService.setPhoto(body.id, body.photoUrl);
-  }
-
-  @Post('complete-swap')
-  completeSwap(@Body() body: any) {
-    return this.authService.completeSwap(body);
   }
 
   @Post('review')
@@ -52,7 +46,7 @@ export class AuthController {
   }
 
   @Post('transfer')
-  transfer(@Body() body: { fromId: number; toId: number; amount: number; title: string }) {
+  transfer(@Body() body: any) {
     return this.authService.transfer(body);
   }
 

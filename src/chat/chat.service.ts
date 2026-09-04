@@ -3,6 +3,25 @@ import { db } from '../db';
 
 @Injectable()
 export class ChatService {
+  private banned(text: string) {
+    const value = String(text || '').toLowerCase();
+    const words = [
+      'sex work',
+      'escort',
+      'porn',
+      'prostitute',
+      'weapon',
+      'gun',
+      'drug deal',
+      'cocaine',
+      'heroin',
+      'hitman',
+      'steal to order',
+      'fraud service',
+    ];
+    return words.some((word) => value.includes(word));
+  }
+
   private mapStatus(status: string) {
     const statusMap: Record<string, string> = {
       PROPOSED: 'pending',
@@ -24,12 +43,13 @@ export class ChatService {
       id: offer.id,
       skillRequested: offer.skill_requested,
       skillOffered: offer.skill_offered,
-      payWithTokens: offer.pay_with_tokens,
-      extraTokens: offer.extra_tokens,
+      payWithTokens: offer.pay_with_tokens || Number(offer.extra_tokens) > 0,
+      extraTokens: Number(offer.extra_tokens || 0),
       duration: offer.duration,
       level: offer.level,
       mode: offer.mode,
       location: offer.location,
+      scheduledAt: offer.scheduled_at,
       proposedBy,
       proposedByName: proposedBy === Number(chat.user_a_id) ? chat.name_a : chat.name_b,
       requesterId,
@@ -136,7 +156,9 @@ export class ChatService {
         unread: this.unreadOf(chat, userId),
         pendingSwap: pending,
         kind: pending?.status === 'pending'
-          ? (Number(pending.proposedBy) === Number(userId) ? 'offer' : 'request')
+          ? Number(pending.proposedBy) === Number(userId)
+            ? 'offer'
+            : 'request'
           : pending?.status === 'accepted'
             ? 'session'
             : 'chat',
@@ -173,10 +195,11 @@ export class ChatService {
   }
 
   async send(chatId: number, fromId: number, text: string) {
-    await db.query(
-      `INSERT INTO messages (chat_id, from_id, type, text) VALUES ($1, $2, 'text', $3)`,
-      [chatId, fromId, text],
-    );
+    await db.query(`INSERT INTO messages (chat_id, from_id, type, text) VALUES ($1, $2, 'text', $3)`, [
+      chatId,
+      fromId,
+      text,
+    ]);
     await db.query(
       'UPDATE chats SET last_message = $1, last_from_id = $2, updated_at = NOW() WHERE id = $3',
       [text, fromId, chatId],
@@ -196,23 +219,22 @@ export class ChatService {
     const lastDone = pair.rows.find((row: any) => ['SETTLED', 'REVIEWED'].includes(row.status));
     if (lastDone) {
       const hours = (Date.now() - new Date(lastDone.updated_at).getTime()) / 36e5;
-      if (hours < 24) {
-        throw new BadRequestException('You can start another swap with this person after 24 hours.');
-      }
+      if (hours < 24) throw new BadRequestException('You can start another swap with this person after 24 hours.');
     }
     const weekCount = pair.rows.filter((row: any) => {
       if (!['SETTLED', 'REVIEWED'].includes(row.status)) return false;
       return (Date.now() - new Date(row.updated_at).getTime()) / 864e5 <= 7;
     }).length;
-    if (weekCount >= 3) {
-      throw new BadRequestException('Maximum 3 completed swaps with this person per week.');
-    }
+    if (weekCount >= 3) throw new BadRequestException('Maximum 3 completed swaps with this person per week.');
   }
 
   async proposeSwap(chatId: number, userId: number, body: any) {
     const chatRes = await db.query('SELECT * FROM chats WHERE id = $1', [chatId]);
     const chat = chatRes.rows[0];
     if (!chat) throw new BadRequestException('Chat not found');
+    if (this.banned(body.skillRequested) || this.banned(body.skillOffered)) {
+      throw new BadRequestException('This activity is not allowed on Skill4Handel');
+    }
     const existing = await this.pendingSwap(chat);
     if (!existing && Number(userId) !== Number(chat.requester_id)) {
       throw new BadRequestException('Only the requester can send the first offer');
@@ -224,22 +246,24 @@ export class ChatService {
       throw new BadRequestException('Finish the current swap first');
     }
     await this.assertSwapLimit(chat.user_a_id, chat.user_b_id);
+    const tokens = Math.min(10, Math.max(0, Number(body.extraTokens) || 0));
     const isCounter = !!existing;
     await db.query(
       `INSERT INTO exchange_offers
-        (chat_id, proposed_by, skill_requested, skill_offered, pay_with_tokens, extra_tokens, duration, level, mode, location, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        (chat_id, proposed_by, skill_requested, skill_offered, pay_with_tokens, extra_tokens, duration, level, mode, location, scheduled_at, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
       [
         chatId,
         userId,
         body.skillRequested,
-        body.payWithTokens ? '' : body.skillOffered,
-        !!body.payWithTokens,
-        Number(body.extraTokens) || 0,
+        body.volunteer ? 'Volunteer help' : body.skillOffered,
+        tokens > 0,
+        tokens,
         body.duration,
-        body.level,
+        body.volunteer ? 'Volunteer' : body.level,
         body.mode,
         body.location || '',
+        body.scheduledAt || null,
         isCounter ? 'COUNTERED' : 'PROPOSED',
       ],
     );
@@ -271,11 +295,19 @@ export class ChatService {
 
   async cancelSwap(chatId: number, userId: number) {
     const offer = await this.latestOffer(chatId);
-    if (!offer || !['PROPOSED', 'COUNTERED'].includes(offer.status)) {
-      throw new BadRequestException('No pending offer to cancel');
-    }
-    if (Number(userId) !== Number(offer.proposed_by)) {
-      throw new BadRequestException('Only the sender can cancel this offer');
+    if (!offer) throw new BadRequestException('No offer to cancel');
+    if (['PROPOSED', 'COUNTERED'].includes(offer.status)) {
+      if (Number(userId) !== Number(offer.proposed_by)) {
+        throw new BadRequestException('Only the sender can cancel this offer');
+      }
+    } else if (offer.status === 'ACCEPTED') {
+      if (!offer.scheduled_at) throw new BadRequestException('No scheduled time on this offer');
+      const hours = (new Date(offer.scheduled_at).getTime() - Date.now()) / 36e5;
+      if (hours < 24) {
+        throw new BadRequestException('Cancel is only allowed until 24 hours before the agreed time');
+      }
+    } else {
+      throw new BadRequestException('This offer cannot be cancelled');
     }
     await db.query(`UPDATE exchange_offers SET status = 'CANCELLED', updated_at = NOW() WHERE id = $1`, [offer.id]);
     await db.query(
@@ -295,43 +327,42 @@ export class ChatService {
     const doneBy = new Set<number>(offer.done_by || []);
     doneBy.add(Number(userId));
     const both = doneBy.has(Number(chat.user_a_id)) && doneBy.has(Number(chat.user_b_id));
-    await db.query(
-      `UPDATE exchange_offers SET done_by = $1, status = $2, updated_at = NOW() WHERE id = $3`,
-      [[...doneBy], both ? 'SETTLED' : 'ACCEPTED', offer.id],
-    );
-    if (both && offer.pay_with_tokens && !offer.settled) {
-      const amount = Number(offer.extra_tokens) || 0;
+    await db.query(`UPDATE exchange_offers SET done_by = $1, status = $2, updated_at = NOW() WHERE id = $3`, [
+      [...doneBy],
+      both ? 'SETTLED' : 'ACCEPTED',
+      offer.id,
+    ]);
+    if (both && Number(offer.extra_tokens) > 0 && !offer.settled) {
+      const amount = Number(offer.extra_tokens);
       const fromId = Number(offer.proposed_by);
       const toId = fromId === Number(chat.user_a_id) ? Number(chat.user_b_id) : Number(chat.user_a_id);
-      if (amount > 0) {
-        const client = await db.connect();
-        try {
-          await client.query('BEGIN');
-          const locked = await client.query('SELECT settled FROM exchange_offers WHERE id = $1 FOR UPDATE', [offer.id]);
-          if (!locked.rows[0].settled) {
-            const fromRes = await client.query('SELECT balance FROM users WHERE id = $1 FOR UPDATE', [fromId]);
-            if (Number(fromRes.rows[0].balance) < amount) throw new BadRequestException('Not enough tokens');
-            await client.query('UPDATE users SET balance = balance - $1 WHERE id = $2', [amount, fromId]);
-            await client.query('UPDATE users SET balance = balance + $1 WHERE id = $2', [amount, toId]);
-            await client.query(
-              `INSERT INTO wallet_transactions (user_id, other_user_id, type, amount, title, exchange_offer_id)
-               VALUES ($1,$2,'SPEND',$3,$4,$5)`,
-              [fromId, toId, -amount, `Token payment for ${offer.skill_requested}`, offer.id],
-            );
-            await client.query(
-              `INSERT INTO wallet_transactions (user_id, other_user_id, type, amount, title, exchange_offer_id)
-               VALUES ($1,$2,'EARN',$3,$4,$5)`,
-              [toId, fromId, amount, `Token payment for ${offer.skill_requested}`, offer.id],
-            );
-            await client.query('UPDATE exchange_offers SET settled = TRUE WHERE id = $1', [offer.id]);
-          }
-          await client.query('COMMIT');
-        } catch (error) {
-          await client.query('ROLLBACK');
-          throw error;
-        } finally {
-          client.release();
+      const client = await db.connect();
+      try {
+        await client.query('BEGIN');
+        const locked = await client.query('SELECT settled FROM exchange_offers WHERE id = $1 FOR UPDATE', [offer.id]);
+        if (!locked.rows[0].settled) {
+          const fromRes = await client.query('SELECT balance FROM users WHERE id = $1 FOR UPDATE', [fromId]);
+          if (Number(fromRes.rows[0].balance) < amount) throw new BadRequestException('Not enough tokens');
+          await client.query('UPDATE users SET balance = balance - $1 WHERE id = $2', [amount, fromId]);
+          await client.query('UPDATE users SET balance = balance + $1 WHERE id = $2', [amount, toId]);
+          await client.query(
+            `INSERT INTO wallet_transactions (user_id, other_user_id, type, amount, title, exchange_offer_id)
+             VALUES ($1,$2,'SPEND',$3,$4,$5)`,
+            [fromId, toId, -amount, `Token payment for ${offer.skill_requested}`, offer.id],
+          );
+          await client.query(
+            `INSERT INTO wallet_transactions (user_id, other_user_id, type, amount, title, exchange_offer_id)
+             VALUES ($1,$2,'EARN',$3,$4,$5)`,
+            [toId, fromId, amount, `Token payment for ${offer.skill_requested}`, offer.id],
+          );
+          await client.query('UPDATE exchange_offers SET settled = TRUE WHERE id = $1', [offer.id]);
         }
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
       }
     }
     if (both) {
