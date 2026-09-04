@@ -250,6 +250,12 @@ export class ChatService {
     if (this.banned(body.skillRequested) || this.banned(body.skillOffered)) {
       throw new BadRequestException('This activity is not allowed on Skill4Handel');
     }
+    if (body.scheduledAt) {
+      const when = new Date(body.scheduledAt).getTime();
+      if (when < Date.now() + 24 * 36e5) {
+        throw new BadRequestException('The earliest time is 24 hours from now');
+      }
+    }
     const existing = await this.pendingSwap(chat);
     if (!existing && Number(userId) !== Number(chat.requester_id)) {
       throw new BadRequestException('Only the requester can send the first offer');
