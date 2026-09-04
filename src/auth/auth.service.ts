@@ -20,6 +20,7 @@ export class AuthService {
       city: user.city || '',
       offers: user.offers || '',
       needs: user.needs || '',
+      photoUrl: user.photo_url || '',
       balance: Number(user.balance || 0),
       history,
       reviews,
@@ -128,6 +129,16 @@ export class AuthService {
        WHERE id = $5
        RETURNING *`,
       [body.name, body.city, body.offers, body.needs, body.id],
+    );
+    const user = result.rows[0];
+    if (!user) throw new UnauthorizedException('User not found');
+    return { user: this.publicUser(user, await this.reviewsOf(user.id), await this.historyOf(user.id)) };
+  }
+
+  async setPhoto(id: number, photoUrl: string) {
+    const result = await db.query(
+      'UPDATE users SET photo_url = $1, updated_at = NOW() WHERE id = $2 RETURNING *',
+      [photoUrl, id],
     );
     const user = result.rows[0];
     if (!user) throw new UnauthorizedException('User not found');

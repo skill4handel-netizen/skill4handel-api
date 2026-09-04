@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { AuthService } from './auth.service';
+import { readToken } from './token';
 
 @Controller('auth')
 export class AuthController {
@@ -26,15 +27,18 @@ export class AuthController {
   }
 
   @Post('forgot-password')
-  forgotPassword(@Body() body: { email: string; password: string }) {
+  forgot(@Body() body: { email: string; password: string }) {
     return this.authService.forgotPassword(body.email, body.password);
   }
 
   @Post('profile')
-  updateProfile(
-    @Body() body: { id: number; name: string; city: string; offers: string; needs: string },
-  ) {
+  profile(@Body() body: { id: number; name: string; city: string; offers: string; needs: string }) {
     return this.authService.updateProfile(body);
+  }
+
+  @Post('photo')
+  photo(@Body() body: { id: number; photoUrl: string }) {
+    return this.authService.setPhoto(body.id, body.photoUrl);
   }
 
   @Post('complete-swap')

@@ -72,6 +72,7 @@ export class MatchService {
           city: other.city || '',
           offers: other.offers || '',
           needs: other.needs || '',
+          photoUrl: other.photo_url || '',
           rating: Number(other.rating || 0),
           reviews: [],
           score: match.score,
