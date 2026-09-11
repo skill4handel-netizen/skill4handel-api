@@ -35,6 +35,26 @@ export class ChatService {
     return statusMap[status] || String(status).toLowerCase();
   }
 
+  private async expireOldOffer(offer: any, chat: any) {
+    if (!offer || !['PROPOSED', 'COUNTERED'].includes(offer.status)) return offer;
+    const start = new Date(offer.created_at || offer.updated_at || 0).getTime();
+    if (!start || Date.now() - start < 24 * 60 * 60 * 1000) return offer;
+    await db.query(
+      `UPDATE exchange_offers SET status = 'CANCELLED', updated_at = NOW() WHERE id = $1`,
+      [offer.id],
+    );
+    await db.query(
+      `INSERT INTO messages (chat_id, from_id, type, text)
+       VALUES ($1, 0, 'text', $2)`,
+      [chat.id, 'Offer cancelled because there was no response within 24 hours.'],
+    );
+    await db.query(
+      `UPDATE chats SET last_message = $1, last_from_id = 0, updated_at = NOW() WHERE id = $2`,
+      ['Offer cancelled: no response in 24 hours', chat.id],
+    );
+    return { ...offer, status: 'CANCELLED' };
+  }
+
   private packOffer(offer: any, chat: any) {
     if (!offer) return null;
     const requesterId = Number(chat.requester_id);
@@ -44,12 +64,15 @@ export class ChatService {
       skillRequested: offer.skill_requested,
       skillOffered: offer.skill_offered,
       payWithTokens: offer.pay_with_tokens || Number(offer.extra_tokens) > 0,
+      volunteer: String(offer.level || '').toLowerCase() === 'volunteer' ||
+        String(offer.skill_offered || '').toLowerCase() === 'volunteer help',
       extraTokens: Number(offer.extra_tokens || 0),
       duration: offer.duration,
       level: offer.level,
       mode: offer.mode,
       location: offer.location,
       scheduledAt: offer.scheduled_at,
+      when: offer.scheduled_at,
       proposedBy,
       proposedByName: proposedBy === Number(chat.user_a_id) ? chat.name_a : chat.name_b,
       requesterId,
@@ -61,6 +84,7 @@ export class ChatService {
       reviewedBy: offer.reviewed_by || [],
       createdAt: offer.created_at,
       updatedAt: offer.updated_at,
+      cancelReason: offer.status === 'CANCELLED' ? 'No response within 24 hours' : null,
     };
   }
 
@@ -73,7 +97,8 @@ export class ChatService {
   }
 
   private async pendingSwap(chat: any) {
-    const offer = await this.latestOffer(chat.id);
+    let offer = await this.latestOffer(chat.id);
+    offer = await this.expireOldOffer(offer, chat);
     const packed = this.packOffer(offer, chat);
     if (!packed) return null;
     if (['completed', 'rejected', 'cancelled'].includes(packed.status)) return null;
@@ -102,7 +127,8 @@ export class ChatService {
       [chat.id],
     );
     const offer = await this.latestOffer(chat.id);
-    const packed = this.packOffer(offer, chat);
+    const expired = await this.expireOldOffer(offer, chat);
+    const packed = this.packOffer(expired, chat);
     return {
       id: chat.id,
       userA: chat.user_a_id,
@@ -250,8 +276,9 @@ export class ChatService {
     if (this.banned(body.skillRequested) || this.banned(body.skillOffered)) {
       throw new BadRequestException('This activity is not allowed on Skill4Handel');
     }
-    if (body.scheduledAt) {
-      const when = new Date(body.scheduledAt).getTime();
+    const scheduledAt = body.scheduledAt || body.when || null;
+    if (scheduledAt) {
+      const when = new Date(scheduledAt).getTime();
       if (when < Date.now() + 24 * 36e5) {
         throw new BadRequestException('The earliest time is 24 hours from now');
       }
@@ -284,9 +311,13 @@ export class ChatService {
         body.volunteer ? 'Volunteer' : body.level,
         body.mode,
         body.location || '',
-        body.scheduledAt || null,
+        scheduledAt,
         isCounter ? 'COUNTERED' : 'PROPOSED',
       ],
+    );
+    await db.query(
+      `INSERT INTO messages (chat_id, from_id, type, text) VALUES ($1, $2, 'text', $3)`,
+      [chatId, userId, 'Offer sent. If there is no answer in 24 hours, it will be cancelled.'],
     );
     await db.query(
       'UPDATE chats SET last_message = $1, last_from_id = $2, updated_at = NOW() WHERE id = $3',
