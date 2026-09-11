@@ -162,10 +162,28 @@ export class AuthService {
     if (Number(body.rating) <= 3 && !String(body.text || '').trim()) {
       throw new BadRequestException('A reason is required for 3 stars or less');
     }
+    const fromId = Number(body.fromId);
+    const toId = Number(body.toId);
+    const done = await db.query(
+      `SELECT e.id
+       FROM exchange_offers e
+       JOIN chats c ON c.id = e.chat_id
+       WHERE e.status IN ('SETTLED', 'REVIEWED')
+         AND (
+           (c.user_a_id = $1 AND c.user_b_id = $2)
+           OR (c.user_a_id = $2 AND c.user_b_id = $1)
+         )
+       ORDER BY e.id DESC
+       LIMIT 1`,
+      [fromId, toId],
+    );
+    if (!done.rows[0]) {
+      throw new BadRequestException('You can review only after both sides complete a skill exchange.');
+    }
     const recent = await db.query(
       `SELECT id FROM reviews
        WHERE from_id = $1 AND to_id = $2 AND created_at > NOW() - INTERVAL '24 hours'`,
-      [body.fromId, body.toId],
+      [fromId, toId],
     );
     if (recent.rows[0]) {
       throw new BadRequestException('You can review this person once every 24 hours.');
@@ -173,14 +191,14 @@ export class AuthService {
     await db.query(
       `INSERT INTO reviews (from_id, to_id, from_name, rating, text, skill)
        VALUES ($1, $2, $3, $4, $5, $6)`,
-      [body.fromId, body.toId, body.fromName, body.rating, body.text || '', body.skill || ''],
+      [fromId, toId, body.fromName, body.rating, body.text || '', body.skill || ''],
     );
-    const avg = await db.query('SELECT AVG(rating) AS rating FROM reviews WHERE to_id = $1', [body.toId]);
+    const avg = await db.query('SELECT AVG(rating) AS rating FROM reviews WHERE to_id = $1', [toId]);
     await db.query('UPDATE users SET rating = $1 WHERE id = $2', [
       Number(avg.rows[0].rating || 0).toFixed(1),
-      body.toId,
+      toId,
     ]);
-    return this.me(Number(body.toId));
+    return this.me(toId);
   }
 
   async transfer(body: { fromId: number; toId: number; amount: number; title: string }) {
