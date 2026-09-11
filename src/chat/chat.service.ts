@@ -83,10 +83,10 @@ export class ChatService {
     await db.query(`UPDATE exchange_offers SET status = 'CANCELLED', updated_at = NOW() WHERE id = $1`, [offer.id]);
     await db.query(`INSERT INTO messages (chat_id, from_id, type, text) VALUES ($1, 0, 'text', $2)`, [
       chat.id,
-      'Offer cancelled because there was no response within 24 hours.',
+      'The offer was cancelled automatically because no response was received within 24 hours. Both members may start a new request.',
     ]);
     await db.query(`UPDATE chats SET last_message = $1, last_from_id = 0, updated_at = NOW() WHERE id = $2`, [
-      'Offer cancelled: no response in 24 hours',
+      'Offer cancelled: no response within 24 hours',
       chat.id,
     ]);
     return { ...offer, status: 'CANCELLED' };
@@ -184,6 +184,7 @@ export class ChatService {
         requesterId: chat.requester_id,
         unread: this.unreadOf(chat, userId),
         pendingSwap: pending,
+        waitingForRequester: !pending && Number(chat.requester_id) !== Number(userId),
         kind:
           pending?.status === 'pending'
             ? Number(pending.proposedBy) === Number(userId)
@@ -211,7 +212,7 @@ export class ChatService {
        WHERE (user_a_id = $1 AND user_b_id = $2) OR (user_a_id = $2 AND user_b_id = $1)`,
       [myId, otherId],
     );
-    const chat = found.rows[0]
+    let chat = found.rows[0]
       ? found.rows[0]
       : (
           await db.query(
@@ -221,6 +222,17 @@ export class ChatService {
             [myId, otherId, myName, otherName],
           )
         ).rows[0];
+
+    const latest = await this.latestOffer(chat.id);
+    const openOffer = latest && ['PROPOSED', 'COUNTERED', 'ACCEPTED'].includes(latest.status);
+    if (!openOffer) {
+      const updated = await db.query(
+        `UPDATE chats SET requester_id = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
+        [myId, chat.id],
+      );
+      chat = updated.rows[0] || chat;
+    }
+
     await this.markRead(chat, myId);
     return this.pack(chat);
   }
@@ -315,7 +327,7 @@ export class ChatService {
     await db.query(`INSERT INTO messages (chat_id, from_id, type, text) VALUES ($1, $2, 'text', $3)`, [
       chatId,
       userId,
-      'Offer sent. If there is no answer in 24 hours, it will be cancelled.',
+      'An offer has been sent. If there is no response within 24 hours, it will be cancelled.',
     ]);
     await db.query(
       'UPDATE chats SET last_message = $1, last_from_id = $2, updated_at = NOW() WHERE id = $3',
