@@ -6,18 +6,8 @@ export class ChatService {
   private banned(text: string) {
     const value = String(text || '').toLowerCase();
     const words = [
-      'sex work',
-      'escort',
-      'porn',
-      'prostitute',
-      'weapon',
-      'gun',
-      'drug deal',
-      'cocaine',
-      'heroin',
-      'hitman',
-      'steal to order',
-      'fraud service',
+      'sex work', 'escort', 'porn', 'prostitute', 'weapon', 'gun',
+      'drug deal', 'cocaine', 'heroin', 'hitman', 'steal to order', 'fraud service',
     ];
     return words.some((word) => value.includes(word));
   }
@@ -76,6 +66,14 @@ export class ChatService {
     return result.rows[0] || null;
   }
 
+  private async previousOfferRow(chatId: number) {
+    const result = await db.query(
+      'SELECT * FROM exchange_offers WHERE chat_id = $1 ORDER BY id DESC LIMIT 2',
+      [chatId],
+    );
+    return result.rows[1] || null;
+  }
+
   private async expireOldOffer(offer: any, chat: any) {
     if (!offer || !['PROPOSED', 'COUNTERED'].includes(offer.status)) return offer;
     const start = new Date(offer.created_at || offer.updated_at || 0).getTime();
@@ -98,7 +96,11 @@ export class ChatService {
     const packed = this.packOffer(offer, chat);
     if (!packed) return null;
     if (['completed', 'rejected', 'cancelled'].includes(packed.status)) return null;
-    return packed;
+    const prev = await this.previousOfferRow(chat.id);
+    return {
+      ...packed,
+      previous: this.packOffer(prev, chat),
+    };
   }
 
   private unreadOf(chat: any, userId: number) {
@@ -208,8 +210,7 @@ export class ChatService {
   async open(myId: number, myName: string, otherId: number, otherName: string) {
     const blocked = await db.query(
       `SELECT id FROM blocks
-       WHERE (blocker_id = $1 AND blocked_id = $2)
-          OR (blocker_id = $2 AND blocked_id = $1)`,
+       WHERE (blocker_id = $1 AND blocked_id = $2) OR (blocker_id = $2 AND blocked_id = $1)`,
       [myId, otherId],
     );
     if (blocked.rows[0]) throw new BadRequestException('This person is blocked');
@@ -224,8 +225,7 @@ export class ChatService {
       : (
           await db.query(
             `INSERT INTO chats (user_a_id, user_b_id, name_a, name_b, requester_id, last_message)
-             VALUES ($1, $2, $3, $4, $1, '')
-             RETURNING *`,
+             VALUES ($1, $2, $3, $4, $1, '') RETURNING *`,
             [myId, otherId, myName, otherName],
           )
         ).rows[0];
@@ -253,9 +253,7 @@ export class ChatService {
 
   async send(chatId: number, fromId: number, text: string) {
     await db.query(`INSERT INTO messages (chat_id, from_id, type, text) VALUES ($1, $2, 'text', $3)`, [
-      chatId,
-      fromId,
-      text,
+      chatId, fromId, text,
     ]);
     await db.query(
       'UPDATE chats SET last_message = $1, last_from_id = $2, updated_at = NOW() WHERE id = $3',
@@ -303,9 +301,6 @@ export class ChatService {
     if (!existing && Number(userId) !== Number(chat.requester_id)) {
       throw new BadRequestException('Only the requester can send the first offer');
     }
-    if (existing && existing.status === 'pending') {
-      // counter-offer is allowed; first-offer pending is replaced by this new row
-    }
     if (existing && existing.status === 'accepted') {
       throw new BadRequestException('Finish the current swap first');
     }
@@ -323,7 +318,7 @@ export class ChatService {
         chatId,
         userId,
         requested,
-        body.volunteer ? 'Volunteer help' : body.skillOffered || '',
+        body.volunteer ? '' : body.skillOffered || '',
         !!body.payWithTokens || tokens > 0,
         tokens,
         body.duration,
@@ -396,7 +391,7 @@ export class ChatService {
     const level = String(offer.level || '').toLowerCase();
     if (level === 'volunteer' || offered === 'volunteer help') return false;
     if (offered === 's4h tokens') return false;
-    return true;
+    return String(offer.skill_offered || '').trim().length > 0;
   }
 
   async markDone(chatId: number, userId: number) {
@@ -406,9 +401,7 @@ export class ChatService {
     if (!chat || !offer || offer.status !== 'ACCEPTED') {
       throw new BadRequestException('Offer is not accepted yet');
     }
-    if (!offer.scheduled_at) {
-      throw new BadRequestException('This offer has no scheduled time');
-    }
+    if (!offer.scheduled_at) throw new BadRequestException('This offer has no scheduled time');
     if (new Date(offer.scheduled_at).getTime() > Date.now()) {
       throw new BadRequestException('You can mark it done only after the agreed time');
     }
