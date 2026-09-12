@@ -173,18 +173,25 @@ export class ChatService {
        ORDER BY updated_at DESC`,
       [userId],
     );
+    const photosRes = await db.query('SELECT id, photo_url FROM users');
+    const photos: Record<string, string> = {};
+    for (const row of photosRes.rows) {
+      photos[String(row.id)] = row.photo_url || '';
+    }
     const items = [];
     for (const chat of result.rows) {
       const pending = await this.pendingSwap(chat);
+      const otherId = Number(chat.user_a_id) === Number(userId) ? chat.user_b_id : chat.user_a_id;
       items.push({
         id: chat.id,
-        name: chat.user_a_id === userId ? chat.name_b : chat.name_a,
-        otherId: chat.user_a_id === userId ? chat.user_b_id : chat.user_a_id,
+        name: Number(chat.user_a_id) === Number(userId) ? chat.name_b : chat.name_a,
+        otherId,
         last: chat.last_message,
         requesterId: chat.requester_id,
         unread: this.unreadOf(chat, userId),
         pendingSwap: pending,
         waitingForRequester: !pending && Number(chat.requester_id) !== Number(userId),
+        photoUrl: photos[String(otherId)] || '',
         kind:
           pending?.status === 'pending'
             ? Number(pending.proposedBy) === Number(userId)
