@@ -292,26 +292,29 @@ export class ChatService {
     if (this.banned(body.skillRequested) || this.banned(body.skillOffered)) {
       throw new BadRequestException('This activity is not allowed on Skill4Handel');
     }
+    const existing = await this.pendingSwap(chat);
     const scheduledAt = body.scheduledAt || body.when || null;
-    if (scheduledAt) {
+    if (!existing && scheduledAt) {
       const when = new Date(scheduledAt).getTime();
       if (when < Date.now() + 24 * 36e5) {
         throw new BadRequestException('The earliest time is 24 hours from now');
       }
     }
-    const existing = await this.pendingSwap(chat);
     if (!existing && Number(userId) !== Number(chat.requester_id)) {
       throw new BadRequestException('Only the requester can send the first offer');
     }
     if (existing && existing.status === 'pending') {
-      throw new BadRequestException('There is already a pending offer');
+      // counter-offer is allowed; first-offer pending is replaced by this new row
     }
     if (existing && existing.status === 'accepted') {
       throw new BadRequestException('Finish the current swap first');
     }
-    await this.assertSwapLimit(chat.user_a_id, chat.user_b_id);
+    if (!existing) {
+      await this.assertSwapLimit(chat.user_a_id, chat.user_b_id);
+    }
     const tokens = Math.min(10, Math.max(0, Number(body.extraTokens) || 0));
     const isCounter = !!existing;
+    const requested = isCounter ? existing.skillRequested : body.skillRequested;
     await db.query(
       `INSERT INTO exchange_offers
         (chat_id, proposed_by, skill_requested, skill_offered, pay_with_tokens, extra_tokens, duration, level, mode, location, scheduled_at, status)
@@ -319,7 +322,7 @@ export class ChatService {
       [
         chatId,
         userId,
-        body.skillRequested,
+        requested,
         body.volunteer ? 'Volunteer help' : body.skillOffered || '',
         !!body.payWithTokens || tokens > 0,
         tokens,
@@ -334,7 +337,9 @@ export class ChatService {
     await db.query(`INSERT INTO messages (chat_id, from_id, type, text) VALUES ($1, $2, 'text', $3)`, [
       chatId,
       userId,
-      'An offer has been sent. If there is no response within 24 hours, it will be cancelled.',
+      isCounter
+        ? 'A counter-offer has been sent.'
+        : 'An offer has been sent. If there is no response within 24 hours, it will be cancelled.',
     ]);
     await db.query(
       'UPDATE chats SET last_message = $1, last_from_id = $2, updated_at = NOW() WHERE id = $3',
