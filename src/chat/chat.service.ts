@@ -79,12 +79,16 @@ export class ChatService {
     const start = new Date(offer.created_at || offer.updated_at || 0).getTime();
     if (!start || Date.now() - start < 24 * 60 * 60 * 1000) return offer;
     await db.query(`UPDATE exchange_offers SET status = 'CANCELLED', updated_at = NOW() WHERE id = $1`, [offer.id]);
-    await db.query(`INSERT INTO messages (chat_id, from_id, type, text) VALUES ($1, 0, 'text', $2)`, [
-      chat.id,
-      'The offer was cancelled automatically because no response was received within 24 hours. Both members may start a new request.',
-    ]);
-    await db.query(`UPDATE chats SET last_message = $1, last_from_id = 0, updated_at = NOW() WHERE id = $2`, [
+    try {
+      await db.query(`INSERT INTO messages (chat_id, from_id, type, text) VALUES ($1, $2, 'text', $3)`, [
+        chat.id,
+        offer.proposed_by,
+        'The offer was cancelled automatically because no response was received within 24 hours. Both members may start a new request.',
+      ]);
+    } catch (_) {}
+    await db.query(`UPDATE chats SET last_message = $1, last_from_id = $2, updated_at = NOW() WHERE id = $3`, [
       'Offer cancelled: no response within 24 hours',
+      offer.proposed_by,
       chat.id,
     ]);
     return { ...offer, status: 'CANCELLED' };
@@ -186,9 +190,9 @@ export class ChatService {
         last: chat.last_message,
         requesterId: chat.requester_id,
         unread: this.unreadOf(chat, userId),
-        pendingSwap: pending,
         waitingForRequester: !pending && Number(chat.requester_id) !== Number(userId),
         photoUrl: photos[String(otherId)] || '',
+        pendingSwap: pending,
         kind:
           pending?.status === 'pending'
             ? Number(pending.proposedBy) === Number(userId) ? 'offer' : 'request'
@@ -306,11 +310,8 @@ export class ChatService {
       ],
     );
     await db.query(`INSERT INTO messages (chat_id, from_id, type, text) VALUES ($1, $2, 'text', $3)`, [
-      chatId,
-      userId,
-      isCounter
-        ? 'A counter-offer has been sent.'
-        : 'An offer has been sent. If there is no response within 24 hours, it will be cancelled.',
+      chatId, userId,
+      isCounter ? 'A counter-offer has been sent.' : 'An offer has been sent. If there is no response within 24 hours, it will be cancelled.',
     ]);
     await db.query('UPDATE chats SET last_message = $1, last_from_id = $2, updated_at = NOW() WHERE id = $3', [
       isCounter ? 'Counter offer' : 'New swap offer', userId, chatId,
@@ -342,20 +343,19 @@ export class ChatService {
     } else if (offer.status === 'ACCEPTED') {
       if (!offer.scheduled_at) throw new BadRequestException('No scheduled time on this offer');
       const hours = (new Date(offer.scheduled_at).getTime() - Date.now()) / 36e5;
-      if (hours < 24) {
-        throw new BadRequestException('Cancel is only allowed until 24 hours before the agreed time');
-      }
+      if (hours < 24) throw new BadRequestException('Cancel is only allowed until 24 hours before the agreed time');
     } else {
       throw new BadRequestException('This offer cannot be cancelled');
     }
     await db.query(`UPDATE exchange_offers SET status = 'CANCELLED', updated_at = NOW() WHERE id = $1`, [offer.id]);
-    await db.query(`INSERT INTO messages (chat_id, from_id, type, text) VALUES ($1, 0, 'text', $2)`, [
-      chatId,
-      'The offer was cancelled. Both members may start a new request.',
-    ]);
+    try {
+      await db.query(`INSERT INTO messages (chat_id, from_id, type, text) VALUES ($1, $2, 'text', $3)`, [
+        chatId, userId, 'The offer was cancelled. Both members may start a new request.',
+      ]);
+    } catch (_) {}
     await db.query(
-      'UPDATE chats SET last_message = $1, last_from_id = 0, updated_at = NOW() WHERE id = $2',
-      ['Offer cancelled. A new request may be started.', chatId],
+      'UPDATE chats SET last_message = $1, last_from_id = $2, updated_at = NOW() WHERE id = $3',
+      ['Offer cancelled. A new request may be started.', userId, chatId],
     );
     return this.get(chatId, userId);
   }
