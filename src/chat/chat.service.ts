@@ -97,10 +97,7 @@ export class ChatService {
     if (!packed) return null;
     if (['completed', 'rejected', 'cancelled'].includes(packed.status)) return null;
     const prev = await this.previousOfferRow(chat.id);
-    return {
-      ...packed,
-      previous: this.packOffer(prev, chat),
-    };
+    return { ...packed, previous: this.packOffer(prev, chat) };
   }
 
   private unreadOf(chat: any, userId: number) {
@@ -177,9 +174,7 @@ export class ChatService {
     );
     const photosRes = await db.query('SELECT id, photo_url FROM users');
     const photos: Record<string, string> = {};
-    for (const row of photosRes.rows) {
-      photos[String(row.id)] = row.photo_url || '';
-    }
+    for (const row of photosRes.rows) photos[String(row.id)] = row.photo_url || '';
     const items = [];
     for (const chat of result.rows) {
       const pending = await this.pendingSwap(chat);
@@ -196,12 +191,8 @@ export class ChatService {
         photoUrl: photos[String(otherId)] || '',
         kind:
           pending?.status === 'pending'
-            ? Number(pending.proposedBy) === Number(userId)
-              ? 'offer'
-              : 'request'
-            : pending?.status === 'accepted'
-              ? 'session'
-              : 'chat',
+            ? Number(pending.proposedBy) === Number(userId) ? 'offer' : 'request'
+            : pending?.status === 'accepted' ? 'session' : 'chat',
       });
     }
     return items;
@@ -214,7 +205,6 @@ export class ChatService {
       [myId, otherId],
     );
     if (blocked.rows[0]) throw new BadRequestException('This person is blocked');
-
     const found = await db.query(
       `SELECT * FROM chats
        WHERE (user_a_id = $1 AND user_b_id = $2) OR (user_a_id = $2 AND user_b_id = $1)`,
@@ -229,7 +219,6 @@ export class ChatService {
             [myId, otherId, myName, otherName],
           )
         ).rows[0];
-
     const latest = await this.latestOffer(chat.id);
     const openOffer = latest && ['PROPOSED', 'COUNTERED', 'ACCEPTED'].includes(latest.status);
     if (!openOffer) {
@@ -239,7 +228,6 @@ export class ChatService {
       );
       chat = updated.rows[0] || chat;
     }
-
     await this.markRead(chat, myId);
     return this.pack(chat);
   }
@@ -252,13 +240,8 @@ export class ChatService {
   }
 
   async send(chatId: number, fromId: number, text: string) {
-    await db.query(`INSERT INTO messages (chat_id, from_id, type, text) VALUES ($1, $2, 'text', $3)`, [
-      chatId, fromId, text,
-    ]);
-    await db.query(
-      'UPDATE chats SET last_message = $1, last_from_id = $2, updated_at = NOW() WHERE id = $3',
-      [text, fromId, chatId],
-    );
+    await db.query(`INSERT INTO messages (chat_id, from_id, type, text) VALUES ($1, $2, 'text', $3)`, [chatId, fromId, text]);
+    await db.query('UPDATE chats SET last_message = $1, last_from_id = $2, updated_at = NOW() WHERE id = $3', [text, fromId, chatId]);
     return this.get(chatId, fromId);
   }
 
@@ -291,6 +274,9 @@ export class ChatService {
       throw new BadRequestException('This activity is not allowed on Skill4Handel');
     }
     const existing = await this.pendingSwap(chat);
+    if (existing && existing.rawStatus === 'COUNTERED') {
+      throw new BadRequestException('A second counter-offer is not allowed. Please accept or decline.');
+    }
     const scheduledAt = body.scheduledAt || body.when || null;
     if (!existing && scheduledAt) {
       const when = new Date(scheduledAt).getTime();
@@ -304,9 +290,7 @@ export class ChatService {
     if (existing && existing.status === 'accepted') {
       throw new BadRequestException('Finish the current swap first');
     }
-    if (!existing) {
-      await this.assertSwapLimit(chat.user_a_id, chat.user_b_id);
-    }
+    if (!existing) await this.assertSwapLimit(chat.user_a_id, chat.user_b_id);
     const tokens = Math.min(10, Math.max(0, Number(body.extraTokens) || 0));
     const isCounter = !!existing;
     const requested = isCounter ? existing.skillRequested : body.skillRequested;
@@ -315,18 +299,10 @@ export class ChatService {
         (chat_id, proposed_by, skill_requested, skill_offered, pay_with_tokens, extra_tokens, duration, level, mode, location, scheduled_at, status)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
       [
-        chatId,
-        userId,
-        requested,
-        body.volunteer ? '' : body.skillOffered || '',
-        !!body.payWithTokens || tokens > 0,
-        tokens,
-        body.duration,
-        body.volunteer ? 'Volunteer' : body.level,
-        body.mode,
-        body.location || '',
-        scheduledAt,
-        isCounter ? 'COUNTERED' : 'PROPOSED',
+        chatId, userId, requested, body.volunteer ? '' : body.skillOffered || '',
+        !!body.payWithTokens || tokens > 0, tokens, body.duration,
+        body.volunteer ? 'Volunteer' : body.level, body.mode, body.location || '',
+        scheduledAt, isCounter ? 'COUNTERED' : 'PROPOSED',
       ],
     );
     await db.query(`INSERT INTO messages (chat_id, from_id, type, text) VALUES ($1, $2, 'text', $3)`, [
@@ -336,29 +312,23 @@ export class ChatService {
         ? 'A counter-offer has been sent.'
         : 'An offer has been sent. If there is no response within 24 hours, it will be cancelled.',
     ]);
-    await db.query(
-      'UPDATE chats SET last_message = $1, last_from_id = $2, updated_at = NOW() WHERE id = $3',
-      [isCounter ? 'Counter offer' : 'New swap offer', userId, chatId],
-    );
+    await db.query('UPDATE chats SET last_message = $1, last_from_id = $2, updated_at = NOW() WHERE id = $3', [
+      isCounter ? 'Counter offer' : 'New swap offer', userId, chatId,
+    ]);
     return this.get(chatId, userId);
   }
 
   async respondSwap(chatId: number, userId: number, action: 'accepted' | 'rejected') {
     const offer = await this.latestOffer(chatId);
-    if (!offer || !['PROPOSED', 'COUNTERED'].includes(offer.status)) {
-      throw new BadRequestException('No pending offer');
-    }
-    if (Number(userId) === Number(offer.proposed_by)) {
-      throw new BadRequestException('The other person must respond');
-    }
+    if (!offer || !['PROPOSED', 'COUNTERED'].includes(offer.status)) throw new BadRequestException('No pending offer');
+    if (Number(userId) === Number(offer.proposed_by)) throw new BadRequestException('The other person must respond');
     await db.query(
       `UPDATE exchange_offers SET status = $1, done_by = '{}', reviewed_by = '{}', updated_at = NOW() WHERE id = $2`,
       [action === 'accepted' ? 'ACCEPTED' : 'REJECTED', offer.id],
     );
-    await db.query(
-      'UPDATE chats SET last_message = $1, last_from_id = $2, updated_at = NOW() WHERE id = $3',
-      [action === 'accepted' ? 'Offer accepted' : 'Offer rejected', userId, chatId],
-    );
+    await db.query('UPDATE chats SET last_message = $1, last_from_id = $2, updated_at = NOW() WHERE id = $3', [
+      action === 'accepted' ? 'Offer accepted' : 'Offer rejected', userId, chatId,
+    ]);
     return this.get(chatId, userId);
   }
 
@@ -379,9 +349,13 @@ export class ChatService {
       throw new BadRequestException('This offer cannot be cancelled');
     }
     await db.query(`UPDATE exchange_offers SET status = 'CANCELLED', updated_at = NOW() WHERE id = $1`, [offer.id]);
+    await db.query(`INSERT INTO messages (chat_id, from_id, type, text) VALUES ($1, 0, 'text', $2)`, [
+      chatId,
+      'The offer was cancelled. Both members may start a new request.',
+    ]);
     await db.query(
-      'UPDATE chats SET last_message = $1, last_from_id = $2, updated_at = NOW() WHERE id = $3',
-      ['Offer cancelled', userId, chatId],
+      'UPDATE chats SET last_message = $1, last_from_id = 0, updated_at = NOW() WHERE id = $2',
+      ['Offer cancelled. A new request may be started.', chatId],
     );
     return this.get(chatId, userId);
   }
@@ -398,9 +372,7 @@ export class ChatService {
     const chatRes = await db.query('SELECT * FROM chats WHERE id = $1', [chatId]);
     const chat = chatRes.rows[0];
     const offer = await this.latestOffer(chatId);
-    if (!chat || !offer || offer.status !== 'ACCEPTED') {
-      throw new BadRequestException('Offer is not accepted yet');
-    }
+    if (!chat || !offer || offer.status !== 'ACCEPTED') throw new BadRequestException('Offer is not accepted yet');
     if (!offer.scheduled_at) throw new BadRequestException('This offer has no scheduled time');
     if (new Date(offer.scheduled_at).getTime() > Date.now()) {
       throw new BadRequestException('You can mark it done only after the agreed time');
@@ -409,9 +381,7 @@ export class ChatService {
     doneBy.add(Number(userId));
     const both = doneBy.has(Number(chat.user_a_id)) && doneBy.has(Number(chat.user_b_id));
     await db.query(`UPDATE exchange_offers SET done_by = $1, status = $2, updated_at = NOW() WHERE id = $3`, [
-      [...doneBy],
-      both ? 'SETTLED' : 'ACCEPTED',
-      offer.id,
+      [...doneBy], both ? 'SETTLED' : 'ACCEPTED', offer.id,
     ]);
     if (both && !offer.settled) {
       const client = await db.connect();
@@ -442,13 +412,11 @@ export class ChatService {
             await client.query('UPDATE users SET balance = balance + 1 WHERE id = $1', [chat.user_a_id]);
             await client.query('UPDATE users SET balance = balance + 1 WHERE id = $2', [chat.user_b_id]);
             await client.query(
-              `INSERT INTO wallet_transactions (user_id, type, amount, title, exchange_offer_id)
-               VALUES ($1,'BONUS',1,$2,$3)`,
+              `INSERT INTO wallet_transactions (user_id, type, amount, title, exchange_offer_id) VALUES ($1,'BONUS',1,$2,$3)`,
               [chat.user_a_id, `Skill swap bonus for ${offer.skill_requested}`, offer.id],
             );
             await client.query(
-              `INSERT INTO wallet_transactions (user_id, type, amount, title, exchange_offer_id)
-               VALUES ($1,'BONUS',1,$2,$3)`,
+              `INSERT INTO wallet_transactions (user_id, type, amount, title, exchange_offer_id) VALUES ($1,'BONUS',1,$2,$3)`,
               [chat.user_b_id, `Skill swap bonus for ${offer.skill_requested}`, offer.id],
             );
           }
@@ -462,9 +430,7 @@ export class ChatService {
         client.release();
       }
     }
-    if (both) {
-      await db.query('UPDATE chats SET last_message = $1, updated_at = NOW() WHERE id = $2', ['Swap completed', chatId]);
-    }
+    if (both) await db.query('UPDATE chats SET last_message = $1, updated_at = NOW() WHERE id = $2', ['Swap completed', chatId]);
     return this.get(chatId, userId);
   }
 
@@ -473,10 +439,7 @@ export class ChatService {
     if (!offer) throw new BadRequestException('Chat not found');
     const reviewedBy = new Set<number>(offer.reviewed_by || []);
     reviewedBy.add(Number(userId));
-    await db.query('UPDATE exchange_offers SET reviewed_by = $1, updated_at = NOW() WHERE id = $2', [
-      [...reviewedBy],
-      offer.id,
-    ]);
+    await db.query('UPDATE exchange_offers SET reviewed_by = $1, updated_at = NOW() WHERE id = $2', [[...reviewedBy], offer.id]);
     return this.get(chatId, userId);
   }
 
