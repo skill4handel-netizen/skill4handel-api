@@ -65,7 +65,7 @@ export class AuthService {
 
   async signup(name: string, email: string, password: string, age?: number, acceptedTerms?: boolean) {
     if (!acceptedTerms) throw new BadRequestException('You must accept the terms');
-    if (Number(age || 0) < 16) throw new BadRequestException('You must be 16 or older');
+    if (Number(age || 0) < 18) throw new BadRequestException('You must be 18 or older');
     const cleanEmail = email.trim().toLowerCase();
     const exists = await db.query('SELECT id FROM users WHERE email = $1', [cleanEmail]);
     if (exists.rows[0]) throw new BadRequestException('This email is already registered');
@@ -95,6 +95,7 @@ export class AuthService {
       throw new UnauthorizedException('Email or password is wrong');
     }
     if (user.is_suspended) throw new UnauthorizedException('Account suspended');
+    await db.query('UPDATE users SET last_login = NOW(), updated_at = NOW() WHERE id = $1', [user.id]);
     return {
       token: signToken(user.id),
       user: this.publicUser(user, await this.reviewsOf(user.id), await this.historyOf(user.id)),
@@ -133,8 +134,8 @@ export class AuthService {
     age?: number;
   }) {
     const age = Number(body.age || 0);
-    if (age > 0 && age < 16) {
-      throw new BadRequestException('Skill4Handel is only for users 16 and older');
+    if (age > 0 && age < 18) {
+      throw new BadRequestException('Skill4Handel is only for users 18 and older');
     }
     const result = await db.query(
       `UPDATE users
