@@ -30,6 +30,11 @@ export class AuthController {
     return this.authService.forgotPassword(body.email, body.password);
   }
 
+  @Post('change-password')
+  changePassword(@Body() body: any) {
+    return this.authService.changePassword(Number(body.userId), body.currentPassword, body.newPassword);
+  }
+
   @Post('profile')
   profile(@Body() body: any) {
     return this.authService.updateProfile(body);

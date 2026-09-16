@@ -124,6 +124,23 @@ export class AuthService {
     return { ok: true };
   }
 
+  async changePassword(userId: number, currentPassword: string, newPassword: string) {
+    if (!currentPassword || !newPassword || String(newPassword).length < 6) {
+      throw new BadRequestException('The new password must have at least 6 characters.');
+    }
+    const result = await db.query('SELECT id, password_hash FROM users WHERE id = $1', [userId]);
+    const user = result.rows[0];
+    if (!user) throw new BadRequestException('Account not found');
+    if (user.password_hash !== this.hash(currentPassword)) {
+      throw new BadRequestException('The current password is incorrect.');
+    }
+    await db.query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [
+      this.hash(newPassword),
+      userId,
+    ]);
+    return { ok: true };
+  }
+
   async updateProfile(body: {
     id: number;
     name: string;
