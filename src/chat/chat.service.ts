@@ -77,17 +77,22 @@ export class ChatService {
   private async expireOldOffer(offer: any, chat: any) {
     if (!offer || !['PROPOSED', 'COUNTERED'].includes(offer.status)) return offer;
     const start = new Date(offer.created_at || offer.updated_at || 0).getTime();
-    if (!start || Date.now() - start < 24 * 60 * 60 * 1000) return offer;
+    const scheduled = offer.scheduled_at ? new Date(offer.scheduled_at).getTime() : 0;
+    const noReply = !!start && Date.now() - start >= 24 * 60 * 60 * 1000;
+    const timePassed = !!scheduled && scheduled <= Date.now();
+    if (!noReply && !timePassed) return offer;
     await db.query(`UPDATE exchange_offers SET status = 'CANCELLED', updated_at = NOW() WHERE id = $1`, [offer.id]);
     try {
       await db.query(`INSERT INTO messages (chat_id, from_id, type, text) VALUES ($1, $2, 'text', $3)`, [
         chat.id,
         offer.proposed_by,
-        'The offer was cancelled automatically because no response was received within 24 hours. Both members may start a new request.',
+        timePassed
+          ? 'The offer expired because the scheduled time passed without a response. Both members may start a new request.'
+          : 'The offer was cancelled automatically because no response was received within 24 hours. Both members may start a new request.',
       ]);
     } catch (_) {}
     await db.query(`UPDATE chats SET last_message = $1, last_from_id = $2, updated_at = NOW() WHERE id = $3`, [
-      'Offer cancelled: no response within 24 hours',
+      timePassed ? 'Offer expired' : 'Offer cancelled: no response within 24 hours',
       offer.proposed_by,
       chat.id,
     ]);
