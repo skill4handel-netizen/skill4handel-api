@@ -25,6 +25,16 @@ export class AuthController {
     return this.authService.verifyEmail(token);
   }
 
+  @Post('resend-verify')
+  resend(@Body() body: any) {
+    return this.authService.resendVerify(body.email);
+  }
+
+  @Post('device-token')
+  deviceToken(@Body() body: any) {
+    return this.authService.saveDeviceToken(Number(body.userId), body.token, body.platform);
+  }
+
   @Post('forgot-password')
   forgot(@Body() body: any) {
     return this.authService.forgotPassword(body.email, body.password);

@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/
 import { createHash } from 'crypto';
 import { db } from '../db';
 import { signToken } from './token';
+import { sendVerifyEmail } from '../mail';
 
 @Injectable()
 export class AuthService {
@@ -83,10 +84,31 @@ export class AuthService {
     );
     const verifyToken = Math.random().toString(36).slice(2) + Date.now().toString(36);
     await db.query('INSERT INTO email_verifications (user_id, token) VALUES ($1, $2)', [user.id, verifyToken]);
-    console.log(`VERIFY LINK: https://skill4handel-api.onrender.com/auth/verify?token=${verifyToken}`);
-    return { token: signToken(user.id), user: this.publicUser(user) };
+    const verifyUrl = await sendVerifyEmail(cleanEmail, verifyToken);
+    return { token: signToken(user.id), user: this.publicUser(user), verifyUrl };
   }
 
+
+  async resendVerify(email: string) {
+    const clean = (email || '').trim().toLowerCase();
+    const found = await db.query('SELECT * FROM users WHERE email = $1', [clean]);
+    const user = found.rows[0];
+    if (!user || user.email_verified) return { ok: true };
+    const verifyToken = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    await db.query('INSERT INTO email_verifications (user_id, token) VALUES ($1, $2)', [user.id, verifyToken]);
+    const verifyUrl = await sendVerifyEmail(clean, verifyToken);
+    return { ok: true, verifyUrl };
+  }
+
+  async saveDeviceToken(userId: number, token: string, platform = 'android') {
+    if (!userId || !token) return { ok: true };
+    await db.query(
+      `INSERT INTO device_tokens (user_id, token, platform)
+       VALUES ($1, $2, $3)`,
+      [userId, token, platform || 'android'],
+    );
+    return { ok: true };
+  }
   async login(email: string, password: string) {
     const cleanEmail = email.trim().toLowerCase();
     const result = await db.query('SELECT * FROM users WHERE email = $1', [cleanEmail]);
