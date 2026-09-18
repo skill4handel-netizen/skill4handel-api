@@ -12,7 +12,14 @@ export class AuthController {
 
   @Post('signup')
   signup(@Body() body: any) {
-    return this.authService.signup(body.name, body.email, body.password, body.age, body.acceptedTerms);
+    return this.authService.signup(
+      body.name,
+      body.email,
+      body.password,
+      body.age,
+      body.acceptedTerms,
+      body.city,
+    );
   }
 
   @Post('login')
