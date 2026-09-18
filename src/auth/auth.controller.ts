@@ -42,7 +42,8 @@ export class AuthController {
     } catch {
       return `<!doctype html><html><body style="font-family:sans-serif;padding:32px;text-align:center">
         <h2>Skill4Handel</h2>
-        <p>This confirmation link is invalid or has already been used.</p>
+        <p>This link was already used. If your account is confirmed, open the app and log in.</p>
+        <p><a href="${app}">Open the app</a></p>
       </body></html>`;
     }
   }

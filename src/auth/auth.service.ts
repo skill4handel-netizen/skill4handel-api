@@ -120,6 +120,7 @@ export class AuthService {
       throw new UnauthorizedException('Email or password is wrong');
     }
     if (user.is_suspended) throw new UnauthorizedException('Account suspended');
+    if (!user.email_verified) throw new UnauthorizedException('Email not verified');
     await db.query('UPDATE users SET last_login = NOW(), updated_at = NOW() WHERE id = $1', [user.id]);
     return {
       token: signToken(user.id),
@@ -129,13 +130,15 @@ export class AuthService {
 
   async verifyEmail(token: string) {
     const result = await db.query(
-      'SELECT * FROM email_verifications WHERE token = $1 AND used = FALSE',
+      'SELECT * FROM email_verifications WHERE token = $1',
       [token],
     );
     const row = result.rows[0];
     if (!row) throw new UnauthorizedException('Invalid or used link');
-    await db.query('UPDATE email_verifications SET used = TRUE WHERE id = $1', [row.id]);
-    await db.query('UPDATE users SET email_verified = TRUE WHERE id = $1', [row.user_id]);
+    if (!row.used) {
+      await db.query('UPDATE email_verifications SET used = TRUE WHERE id = $1', [row.id]);
+      await db.query('UPDATE users SET email_verified = TRUE WHERE id = $1', [row.user_id]);
+    }
     const user = (await db.query('SELECT * FROM users WHERE id = $1', [row.user_id])).rows[0];
     return {
       ok: true,
