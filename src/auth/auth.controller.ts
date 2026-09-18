@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Post, Query } from '@nestjs/common';
 import { AuthService } from './auth.service';
 
 @Controller('auth')
@@ -63,6 +63,11 @@ export class AuthController {
   @Post('transfer')
   transfer(@Body() body: any) {
     return this.authService.transfer(body);
+  }
+
+  @Delete('transaction')
+  deleteTransaction(@Query('userId') userId: string, @Query('id') id: string) {
+    return this.authService.deleteTransaction(Number(userId), Number(id));
   }
 
   @Post('ticket')

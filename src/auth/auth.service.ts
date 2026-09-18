@@ -48,10 +48,11 @@ export class AuthService {
 
   private async historyOf(userId: number) {
     const result = await db.query(
-      'SELECT title, amount, type FROM wallet_transactions WHERE user_id = $1 ORDER BY created_at DESC',
+      'SELECT id, title, amount, type FROM wallet_transactions WHERE user_id = $1 ORDER BY created_at DESC',
       [userId],
     );
     return result.rows.map((row: any) => ({
+      id: row.id,
       title: row.title,
       amount: `${Number(row.amount) > 0 ? '+' : ''}${row.amount} S4H`,
     }));
@@ -294,6 +295,12 @@ export class AuthService {
 
   async unblock(userId: number, otherId: number) {
     await db.query('DELETE FROM blocks WHERE blocker_id = $1 AND blocked_id = $2', [userId, otherId]);
+    return { ok: true };
+  }
+
+  async deleteTransaction(userId: number, id: number) {
+    if (!userId || !id) throw new BadRequestException('Invalid transaction');
+    await db.query('DELETE FROM wallet_transactions WHERE id = $1 AND user_id = $2', [id, userId]);
     return { ok: true };
   }
 
