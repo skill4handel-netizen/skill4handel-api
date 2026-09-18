@@ -1,27 +1,53 @@
-[{
-	"resource": "/c:/dev/skill4handel-api/src/notify/notify.service.ts",
-	"owner": "typescript",
-	"code": "2339",
-	"severity": 8,
-	"message": "Property 'apps' does not exist on type '{ default: typeof import(\"c:/dev/skill4handel-api/node_modules/firebase-admin/lib/index\"); initializeApp: (options?: AppOptions | undefined, appName?: string | undefined) => App; ... 9 more ...; SDK_VERSION: string; }'.",
-	"source": "ts",
-	"startLineNumber": 16,
-	"startColumn": 18,
-	"endLineNumber": 16,
-	"endColumn": 22,
-	"modelVersionId": 2,
-	"origin": "extHost1"
-},{
-	"resource": "/c:/dev/skill4handel-api/src/notify/notify.service.ts",
-	"owner": "typescript",
-	"code": "2339",
-	"severity": 8,
-	"message": "Property 'credential' does not exist on type '{ default: typeof import(\"c:/dev/skill4handel-api/node_modules/firebase-admin/lib/index\"); initializeApp: (options?: AppOptions | undefined, appName?: string | undefined) => App; ... 9 more ...; SDK_VERSION: string; }'.",
-	"source": "ts",
-	"startLineNumber": 17,
-	"startColumn": 49,
-	"endLineNumber": 17,
-	"endColumn": 59,
-	"modelVersionId": 2,
-	"origin": "extHost1"
-}]
+import { Injectable } from '@nestjs/common';
+import { cert, getApps, initializeApp } from 'firebase-admin/app';
+import { getMessaging } from 'firebase-admin/messaging';
+import { db } from '../db';
+
+@Injectable()
+export class NotifyService {
+  private ready = false;
+
+  private init() {
+    if (this.ready) {
+      return;
+    }
+    const raw = process.env.FIREBASE_SERVICE_ACCOUNT || '';
+    if (!raw) {
+      return;
+    }
+    try {
+      const cred = JSON.parse(raw);
+      if (getApps().length === 0) {
+        initializeApp({
+          credential: cert(cred),
+        });
+      }
+      this.ready = true;
+    } catch (error) {
+      console.log('FIREBASE INIT ERROR', error);
+    }
+  }
+
+  async sendToUser(userId: number, title: string, body: string, data: Record<string, string> = {}) {
+    this.init();
+    const tokens = await db.query('SELECT token FROM device_tokens WHERE user_id = $1', [userId]);
+    if (!tokens.rows.length) {
+      return { ok: true, sent: 0 };
+    }
+    if (!this.ready) {
+      console.log('PUSH SKIPPED (no Firebase key)', userId, title, body);
+      return { ok: true, sent: 0 };
+    }
+    try {
+      const result = await getMessaging().sendEachForMulticast({
+        notification: { title, body },
+        data,
+        tokens: tokens.rows.map((row: { token: string }) => row.token),
+      });
+      return { ok: true, sent: result.successCount };
+    } catch (error) {
+      console.log('PUSH ERROR', error);
+      return { ok: false, sent: 0 };
+    }
+  }
+}
