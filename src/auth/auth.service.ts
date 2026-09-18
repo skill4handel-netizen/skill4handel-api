@@ -65,17 +65,17 @@ export class AuthService {
     return this.publicUser(user, await this.reviewsOf(user.id), await this.historyOf(user.id));
   }
 
-  async signup(name: string, email: string, password: string, age?: number, acceptedTerms?: boolean) {
+  async signup(name: string, email: string, password: string, age?: number, acceptedTerms?: boolean, city?: string) {
     if (!acceptedTerms) throw new BadRequestException('You must accept the terms');
     if (Number(age || 0) < 18) throw new BadRequestException('You must be 18 or older');
     const cleanEmail = email.trim().toLowerCase();
     const exists = await db.query('SELECT id FROM users WHERE email = $1', [cleanEmail]);
     if (exists.rows[0]) throw new BadRequestException('This email is already registered');
     const created = await db.query(
-      `INSERT INTO users (name, email, password_hash, balance, age, terms_accepted_at)
-       VALUES ($1, $2, $3, 20, $4, NOW())
+      `INSERT INTO users (name, email, password_hash, balance, age, city, terms_accepted_at)
+       VALUES ($1, $2, $3, 20, $4, $5, NOW())
        RETURNING *`,
-      [name, cleanEmail, this.hash(password), Number(age)],
+      [name, cleanEmail, this.hash(password), Number(age), (city || '').trim()],
     );
     const user = created.rows[0];
     await db.query(
@@ -104,8 +104,10 @@ export class AuthService {
   async saveDeviceToken(userId: number, token: string, platform = 'android') {
     if (!userId || !token) return { ok: true };
     await db.query(
-      `INSERT INTO device_tokens (user_id, token, platform)
-       VALUES ($1, $2, $3)`,
+      `INSERT INTO device_tokens (user_id, token, platform, updated_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (token)
+       DO UPDATE SET user_id = EXCLUDED.user_id, platform = EXCLUDED.platform, updated_at = NOW()`,
       [userId, token, platform || 'android'],
     );
     return { ok: true };
@@ -134,7 +136,12 @@ export class AuthService {
     if (!row) throw new UnauthorizedException('Invalid or used link');
     await db.query('UPDATE email_verifications SET used = TRUE WHERE id = $1', [row.id]);
     await db.query('UPDATE users SET email_verified = TRUE WHERE id = $1', [row.user_id]);
-    return { ok: true };
+    const user = (await db.query('SELECT * FROM users WHERE id = $1', [row.user_id])).rows[0];
+    return {
+      ok: true,
+      token: signToken(row.user_id),
+      user: this.publicUser(user, await this.reviewsOf(user.id), await this.historyOf(user.id)),
+    };
   }
 
   async forgotPassword(email: string, password: string) {
@@ -179,7 +186,9 @@ export class AuthService {
     }
     const result = await db.query(
       `UPDATE users
-       SET name = $1, city = $2, offers = $3, needs = $4, gender = $5, age = $6, updated_at = NOW()
+       SET name = $1,
+           city = CASE WHEN COALESCE(city, '') = '' THEN $2 ELSE city END,
+           offers = $3, needs = $4, gender = $5, age = $6, updated_at = NOW()
        WHERE id = $7
        RETURNING *`,
       [body.name, body.city, body.offers, body.needs, body.gender || '', age || null, body.id],

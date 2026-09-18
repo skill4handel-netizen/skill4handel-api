@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, Post, Query } from '@nestjs/common';
 import { AuthService } from './auth.service';
 
 @Controller('auth')
@@ -21,8 +21,28 @@ export class AuthController {
   }
 
   @Get('verify')
-  verify(@Query('token') token: string) {
-    return this.authService.verifyEmail(token);
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  async verifyLink(@Query('token') token: string) {
+    const app = `skill4handel://verify?token=${encodeURIComponent(token || '')}`;
+    try {
+      await this.authService.verifyEmail(token);
+      return `<!doctype html><html><body style="font-family:sans-serif;padding:32px;text-align:center">
+        <h2>Skill4Handel</h2>
+        <p>Your email address has been confirmed.</p>
+        <p><a href="${app}">Open the app</a></p>
+        <script>location.href="${app}";</script>
+      </body></html>`;
+    } catch {
+      return `<!doctype html><html><body style="font-family:sans-serif;padding:32px;text-align:center">
+        <h2>Skill4Handel</h2>
+        <p>This confirmation link is invalid or has already been used.</p>
+      </body></html>`;
+    }
+  }
+
+  @Post('verify')
+  verifyPost(@Body() body: any) {
+    return this.authService.verifyEmail(body.token);
   }
 
   @Post('resend-verify')
