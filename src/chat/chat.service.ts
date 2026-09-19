@@ -1,8 +1,23 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { db } from '../db';
+import { NotifyService } from '../notify/notify.service';
 
 @Injectable()
 export class ChatService {
+  constructor(private readonly notify: NotifyService) {}
+
+  private otherId(chat: any, userId: number) {
+    return Number(chat.user_a_id) === Number(userId) ? Number(chat.user_b_id) : Number(chat.user_a_id);
+  }
+
+  private async ping(userId: number, title: string, body: string, data: Record<string, string> = {}) {
+    try {
+      await this.notify.sendToUser(userId, title, body, data);
+    } catch (error) {
+      console.log('NOTIFY SKIP', error);
+    }
+  }
+
   private banned(text: string) {
     const value = String(text || '').toLowerCase();
     const words = [
@@ -96,6 +111,11 @@ export class ChatService {
       offer.proposed_by,
       chat.id,
     ]);
+    const closed = timePassed
+      ? 'An offer expired because the scheduled time passed.'
+      : 'An offer was cancelled because there was no response within 24 hours.';
+    await this.ping(Number(chat.user_a_id), 'Offer closed', closed, { type: 'offer', chatId: String(chat.id) });
+    await this.ping(Number(chat.user_b_id), 'Offer closed', closed, { type: 'offer', chatId: String(chat.id) });
     return { ...offer, status: 'CANCELLED' };
   }
 
@@ -251,6 +271,10 @@ export class ChatService {
   async send(chatId: number, fromId: number, text: string) {
     await db.query(`INSERT INTO messages (chat_id, from_id, type, text) VALUES ($1, $2, 'text', $3)`, [chatId, fromId, text]);
     await db.query('UPDATE chats SET last_message = $1, last_from_id = $2, updated_at = NOW() WHERE id = $3', [text, fromId, chatId]);
+    const chat = (await db.query('SELECT * FROM chats WHERE id = $1', [chatId])).rows[0];
+    if (chat) {
+      await this.ping(this.otherId(chat, fromId), 'New message', text.slice(0, 80), { type: 'chat', chatId: String(chatId) });
+    }
     return this.get(chatId, fromId);
   }
 
@@ -321,6 +345,14 @@ export class ChatService {
     await db.query('UPDATE chats SET last_message = $1, last_from_id = $2, updated_at = NOW() WHERE id = $3', [
       isCounter ? 'Counter offer' : 'New swap offer', userId, chatId,
     ]);
+    await this.ping(
+      this.otherId(chat, userId),
+      isCounter ? 'Counter-offer received' : 'New offer received',
+      isCounter
+        ? 'A counter-offer is waiting for your response.'
+        : 'A skill exchange offer is waiting for your response.',
+      { type: 'offer', chatId: String(chatId) },
+    );
     return this.get(chatId, userId);
   }
 
@@ -335,6 +367,17 @@ export class ChatService {
     await db.query('UPDATE chats SET last_message = $1, last_from_id = $2, updated_at = NOW() WHERE id = $3', [
       action === 'accepted' ? 'Offer accepted' : 'Offer rejected', userId, chatId,
     ]);
+    const chat = (await db.query('SELECT * FROM chats WHERE id = $1', [chatId])).rows[0];
+    if (chat) {
+      await this.ping(
+        Number(offer.proposed_by),
+        action === 'accepted' ? 'Offer accepted' : 'Offer declined',
+        action === 'accepted'
+          ? 'Your offer has been accepted.'
+          : 'Your offer has been declined.',
+        { type: 'offer', chatId: String(chatId) },
+      );
+    }
     return this.get(chatId, userId);
   }
 
@@ -362,6 +405,15 @@ export class ChatService {
       'UPDATE chats SET last_message = $1, last_from_id = $2, updated_at = NOW() WHERE id = $3',
       ['Offer cancelled. A new request may be started.', userId, chatId],
     );
+    const chat = (await db.query('SELECT * FROM chats WHERE id = $1', [chatId])).rows[0];
+    if (chat) {
+      await this.ping(
+        this.otherId(chat, userId),
+        'Offer cancelled',
+        'An offer was cancelled. A new request may be started.',
+        { type: 'offer', chatId: String(chatId) },
+      );
+    }
     return this.get(chatId, userId);
   }
 
@@ -436,6 +488,14 @@ export class ChatService {
       }
     }
     if (both) await db.query('UPDATE chats SET last_message = $1, updated_at = NOW() WHERE id = $2', ['Swap completed', chatId]);
+    await this.ping(
+      this.otherId(chat, userId),
+      both ? 'Exchange completed' : 'Completion confirmed',
+      both
+        ? 'The exchange is complete. Please leave a review.'
+        : 'The other member has marked the exchange as complete.',
+      { type: 'offer', chatId: String(chatId) },
+    );
     return this.get(chatId, userId);
   }
 
