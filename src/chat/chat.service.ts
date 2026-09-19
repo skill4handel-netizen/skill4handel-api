@@ -317,8 +317,8 @@ export class ChatService {
         throw new BadRequestException('The earliest time is 24 hours from now');
       }
     }
-    if (!existing && Number(userId) !== Number(chat.requester_id)) {
-      throw new BadRequestException('Only the requester can send the first offer');
+    if (!existing) {
+      await db.query('UPDATE chats SET requester_id = $1 WHERE id = $2', [userId, chatId]);
     }
     if (existing && existing.status === 'accepted') {
       throw new BadRequestException('Finish the current swap first');
@@ -407,10 +407,13 @@ export class ChatService {
   async cancelSwap(chatId: number, userId: number) {
     const offer = await this.latestOffer(chatId);
     if (!offer) throw new BadRequestException('No offer to cancel');
+    const members = await db.query('SELECT * FROM chats WHERE id = $1', [chatId]);
+    const chatRow = members.rows[0];
+    if (chatRow && ![Number(chatRow.user_a_id), Number(chatRow.user_b_id)].includes(Number(userId))) {
+      throw new BadRequestException('You are not part of this chat');
+    }
     if (['PROPOSED', 'COUNTERED'].includes(offer.status)) {
-      if (Number(userId) !== Number(offer.proposed_by)) {
-        throw new BadRequestException('Only the sender can cancel this offer');
-      }
+      // either member may cancel a pending offer
     } else if (offer.status === 'ACCEPTED') {
       if (!offer.scheduled_at) throw new BadRequestException('No scheduled time on this offer');
       const hours = (new Date(offer.scheduled_at).getTime() - Date.now()) / 36e5;
