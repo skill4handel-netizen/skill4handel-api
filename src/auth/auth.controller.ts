@@ -1,9 +1,13 @@
 import { Body, Controller, Delete, Get, Header, Post, Query } from '@nestjs/common';
 import { AuthService } from './auth.service';
+import { NotifyService } from '../notify/notify.service';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly notify: NotifyService,
+  ) {}
 
   @Get('me')
   me(@Query('userId') userId: string) {
@@ -63,6 +67,16 @@ export class AuthController {
   @Post('device-token')
   deviceToken(@Body() body: any) {
     return this.authService.saveDeviceToken(Number(body.userId), body.token, body.platform);
+  }
+
+  @Post('test-push')
+  testPush(@Body() body: any) {
+    return this.notify.sendToUser(
+      Number(body.userId),
+      'Skill4Handel',
+      'Test notification. If you see this, push is working.',
+      { type: 'test' },
+    );
   }
 
   @Post('forgot-password')
