@@ -39,11 +39,8 @@ export class ChatController {
   }
 
   @Post(':id/swap/respond')
-  respond(
-    @Param('id') id: string,
-    @Body() body: { userId: number; action: 'accepted' | 'rejected' },
-  ) {
-    return this.chatService.respondSwap(Number(id), Number(body.userId), body.action);
+  respond(@Param('id') id: string, @Body() body: any) {
+    return this.chatService.respondSwap(Number(id), Number(body.userId), body.action, body);
   }
 
   @Post(':id/swap/cancel')

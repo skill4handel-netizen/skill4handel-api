@@ -356,16 +356,39 @@ export class ChatService {
     return this.get(chatId, userId);
   }
 
-  async respondSwap(chatId: number, userId: number, action: 'accepted' | 'rejected') {
+  async respondSwap(chatId: number, userId: number, action: 'accepted' | 'rejected', body: any = {}) {
     const offer = await this.latestOffer(chatId);
     if (!offer || !['PROPOSED', 'COUNTERED'].includes(offer.status)) throw new BadRequestException('No pending offer');
     if (Number(userId) === Number(offer.proposed_by)) throw new BadRequestException('The other person must respond');
-    await db.query(
-      `UPDATE exchange_offers SET status = $1, done_by = '{}', reviewed_by = '{}', updated_at = NOW() WHERE id = $2`,
-      [action === 'accepted' ? 'ACCEPTED' : 'REJECTED', offer.id],
-    );
+    const skillOffered = String(body.skillOffered || '').trim();
+    if (action === 'accepted' && skillOffered) {
+      if (this.banned(skillOffered)) {
+        throw new BadRequestException('This activity is not allowed on Skill4Handel');
+      }
+      await db.query(
+        `UPDATE exchange_offers
+         SET status = 'ACCEPTED', skill_offered = $1, done_by = '{}', reviewed_by = '{}', updated_at = NOW()
+         WHERE id = $2`,
+        [skillOffered, offer.id],
+      );
+    } else {
+      await db.query(
+        `UPDATE exchange_offers SET status = $1, done_by = '{}', reviewed_by = '{}', updated_at = NOW() WHERE id = $2`,
+        [action === 'accepted' ? 'ACCEPTED' : 'REJECTED', offer.id],
+      );
+    }
+    const text = action === 'accepted'
+      ? (skillOffered
+          ? `The offer has been accepted. Return skill: ${skillOffered}.`
+          : 'The offer has been accepted. The session is confirmed.')
+      : 'The offer has been declined.';
+    try {
+      await db.query(`INSERT INTO messages (chat_id, from_id, type, text) VALUES ($1, $2, 'text', $3)`, [
+        chatId, userId, text,
+      ]);
+    } catch (_) {}
     await db.query('UPDATE chats SET last_message = $1, last_from_id = $2, updated_at = NOW() WHERE id = $3', [
-      action === 'accepted' ? 'Offer accepted' : 'Offer rejected', userId, chatId,
+      action === 'accepted' ? 'Offer accepted' : 'Offer declined', userId, chatId,
     ]);
     const chat = (await db.query('SELECT * FROM chats WHERE id = $1', [chatId])).rows[0];
     if (chat) {
@@ -440,6 +463,15 @@ export class ChatService {
     await db.query(`UPDATE exchange_offers SET done_by = $1, status = $2, updated_at = NOW() WHERE id = $3`, [
       [...doneBy], both ? 'SETTLED' : 'ACCEPTED', offer.id,
     ]);
+    try {
+      await db.query(`INSERT INTO messages (chat_id, from_id, type, text) VALUES ($1, $2, 'text', $3)`, [
+        chatId,
+        userId,
+        both
+          ? 'Both members confirmed completion. Reviews can now be written.'
+          : 'Completion has been confirmed by one member. Waiting for the other confirmation.',
+      ]);
+    } catch (_) {}
     if (both && !offer.settled) {
       const client = await db.connect();
       try {
