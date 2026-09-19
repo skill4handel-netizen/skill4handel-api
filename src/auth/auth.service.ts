@@ -109,13 +109,14 @@ export class AuthService {
         user_id INTEGER NOT NULL,
         token TEXT NOT NULL UNIQUE,
         platform TEXT,
-        updated_at TIMESTAMPTZ DEFAULT NOW()
+        created_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
+    await db.query('ALTER TABLE device_tokens ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()');
     await db.query('DELETE FROM device_tokens WHERE token = $1 OR user_id = $2', [token, userId]);
     await db.query(
-      `INSERT INTO device_tokens (user_id, token, platform, updated_at)
-       VALUES ($1, $2, $3, NOW())`,
+      `INSERT INTO device_tokens (user_id, token, platform)
+       VALUES ($1, $2, $3)`,
       [userId, token, platform || 'android'],
     );
     const count = await db.query('SELECT COUNT(*)::int AS n FROM device_tokens WHERE user_id = $1', [userId]);
