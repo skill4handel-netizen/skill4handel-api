@@ -102,15 +102,24 @@ export class AuthService {
   }
 
   async saveDeviceToken(userId: number, token: string, platform = 'android') {
-    if (!userId || !token) return { ok: true };
+    if (!userId || !token) return { ok: false, reason: 'missing-user-or-token' };
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS device_tokens (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        token TEXT NOT NULL UNIQUE,
+        platform TEXT,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await db.query('DELETE FROM device_tokens WHERE token = $1 OR user_id = $2', [token, userId]);
     await db.query(
       `INSERT INTO device_tokens (user_id, token, platform, updated_at)
-       VALUES ($1, $2, $3, NOW())
-       ON CONFLICT (token)
-       DO UPDATE SET user_id = EXCLUDED.user_id, platform = EXCLUDED.platform, updated_at = NOW()`,
+       VALUES ($1, $2, $3, NOW())`,
       [userId, token, platform || 'android'],
     );
-    return { ok: true };
+    const count = await db.query('SELECT COUNT(*)::int AS n FROM device_tokens WHERE user_id = $1', [userId]);
+    return { ok: true, saved: true, tokens: count.rows[0].n };
   }
   async login(email: string, password: string) {
     const cleanEmail = email.trim().toLowerCase();
