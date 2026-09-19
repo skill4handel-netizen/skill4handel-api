@@ -73,14 +73,14 @@ export class AuthService {
     if (exists.rows[0]) throw new BadRequestException('This email is already registered');
     const created = await db.query(
       `INSERT INTO users (name, email, password_hash, balance, age, city, terms_accepted_at)
-       VALUES ($1, $2, $3, 20, $4, $5, NOW())
+       VALUES ($1, $2, $3, 1, $4, $5, NOW())
        RETURNING *`,
       [name, cleanEmail, this.hash(password), Number(age), (city || '').trim()],
     );
     const user = created.rows[0];
     await db.query(
       `INSERT INTO wallet_transactions (user_id, type, amount, title)
-       VALUES ($1, 'BONUS', 20, 'Starter bonus')`,
+       VALUES ($1, 'BONUS', 1, 'Starter bonus')`,
       [user.id],
     );
     const verifyToken = Math.random().toString(36).slice(2) + Date.now().toString(36);

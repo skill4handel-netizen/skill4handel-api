@@ -36,8 +36,10 @@ export class AuthController {
       return `<!doctype html><html><body style="font-family:sans-serif;padding:32px;text-align:center">
         <h2>Skill4Handel</h2>
         <p>Your email address has been confirmed.</p>
+        <p>Open the app and continue to log in.</p>
         <p><a href="${app}">Open the app</a></p>
-        <script>location.href="${app}";</script>
+        <p><a href="https://www.skill4handel.com">www.skill4handel.com</a></p>
+        <script>setTimeout(function(){ location.href="${app}"; }, 800);</script>
       </body></html>`;
     } catch {
       return `<!doctype html><html><body style="font-family:sans-serif;padding:32px;text-align:center">
