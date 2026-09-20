@@ -35,12 +35,14 @@ pre { white-space: pre-wrap; background: #f6f7fb; padding: 12px; border-radius: 
 <body>
 <div id="login" class="card" style="max-width:420px;margin:80px auto">
   <h2>Skill4Handel Admin</h2>
+  <form id="loginForm">
   <input id="email" placeholder="admin email" style="width:90%" />
   <input id="password" type="password" placeholder="password" style="width:90%" />
   <div>
-    <button id="loginBtn" type="button">Enter</button>
+    <button id="loginBtn" type="submit">Enter</button>
     <button id="forgotBtn" type="button">Forgot password</button>
   </div>
+</form>
   <p id="error" class="bad"></p>
 </div>
 <div id="app" class="hide">
@@ -346,6 +348,10 @@ document.addEventListener("click", async function(event) {
 });
 $("ticketFilter").addEventListener("change", loadTickets);
 $("offerFilter").addEventListener("change", loadExchanges);
+$("loginForm").addEventListener("submit", function(event) {
+  event.preventDefault();
+  login();
+});
 if (token()) {
   $("login").className = "hide";
   $("app").className = "";
