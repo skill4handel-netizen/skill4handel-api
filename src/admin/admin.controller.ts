@@ -12,42 +12,69 @@ export class AdminController {
 <html>
 <head>
 <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Skill4Handel Admin</title>
 <style>
-body { font-family: Arial, sans-serif; margin: 0; background: #eef2f7; color: #122; }
-header { background: #12345a; color: #fff; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }
-main { padding: 20px; }
-.card { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
-.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
-.stat { background: #f7f9fc; border-radius: 10px; padding: 12px; }
-.stat b { display: block; font-size: 22px; }
-input, button, select, textarea { padding: 8px 10px; margin: 4px 4px 4px 0; }
-table { width: 100%; border-collapse: collapse; font-size: 14px; }
-th, td { border-bottom: 1px solid #eee; padding: 8px; text-align: left; vertical-align: top; }
-.bad { color: #b42318; }
-.hide { display: none; }
-.tabs button { border: 0; background: #d9e2ef; border-radius: 8px; padding: 8px 12px; }
-.tabs button.on { background: #12345a; color: #fff; }
-dialog { border: 0; border-radius: 12px; padding: 20px; width: min(720px, 92vw); }
-pre { white-space: pre-wrap; background: #f6f7fb; padding: 12px; border-radius: 8px; }
+  :root { --navy:#102a43; --blue:#1f4e79; --gold:#c9a227; --bg:#e8eef5; --card:#fff; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: Arial, sans-serif; background: var(--bg); color:#122; }
+  .login-wrap { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px;
+    background: linear-gradient(160deg, #102a43 0%, #1f4e79 55%, #e8eef5 55%); }
+  .login-card { width:min(420px,100%); background:#fff; border-radius:20px; padding:28px;
+    box-shadow: 0 16px 40px rgba(16,42,67,.25); }
+  .brand { text-align:center; margin-bottom:18px; }
+  .mark { width:64px; height:64px; border-radius:16px; margin:0 auto 10px; display:flex; align-items:center;
+    justify-content:center; background: var(--navy); color:#fff; font-weight:700; font-size:18px; }
+  .brand h1 { margin:0; font-size:22px; color:var(--navy); }
+  .brand p { margin:6px 0 0; color:#5b6b7c; font-size:13px; }
+  label { display:block; font-size:12px; color:#5b6b7c; margin:10px 0 4px; }
+  input, button, select, textarea { width:100%; padding:12px; border:1px solid #d5deea; border-radius:10px; font-size:14px; }
+  .row-btns { display:flex; gap:8px; margin-top:14px; }
+  button { cursor:pointer; border:0; }
+  .primary { background:var(--navy); color:#fff; font-weight:700; }
+  .ghost { background:#eef3f8; color:var(--navy); }
+  .error { min-height:20px; color:#b42318; font-size:13px; margin-top:10px; }
+  header { background:var(--navy); color:#fff; padding:16px 24px; display:flex; justify-content:space-between; align-items:center; }
+  header button { width:auto; background:#fff; color:var(--navy); padding:8px 12px; }
+  main { padding:20px; }
+  .card { background:var(--card); border-radius:12px; padding:16px; margin-bottom:16px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; }
+  .stat { background:#f7f9fc; border-radius:10px; padding:12px; }
+  .stat b { display:block; font-size:22px; color:var(--navy); }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { border-bottom:1px solid #eee; padding:8px; text-align:left; vertical-align:top; }
+  .hide { display:none; }
+  .tabs button { width:auto; background:#d9e2ef; color:var(--navy); }
+  .tabs button.on { background:var(--navy); color:#fff; }
+  dialog { border:0; border-radius:12px; padding:20px; width:min(720px,92vw); }
+  pre { white-space:pre-wrap; background:#f6f7fb; padding:12px; border-radius:8px; }
+  #app input, #app button, #app select, #app textarea { width:auto; }
 </style>
 </head>
 <body>
-<div id="login" class="card" style="max-width:420px;margin:80px auto">
-  <h2>Skill4Handel Admin</h2>
-  <form id="loginForm">
-  <input id="email" placeholder="admin email" style="width:90%" />
-  <input id="password" type="password" placeholder="password" style="width:90%" />
-  <div>
-    <button id="loginBtn" type="submit">Enter</button>
-    <button id="forgotBtn" type="button">Forgot password</button>
+<div id="login" class="login-wrap">
+  <div class="login-card">
+    <div class="brand">
+      <div class="mark">S4H</div>
+      <h1>Skill4Handel Admin</h1>
+      <p>Support, members and exchanges</p>
+    </div>
+    <form id="loginForm">
+      <label>Email</label>
+      <input id="email" type="email" autocomplete="username" placeholder="admin@skill4handel.com" />
+      <label>Password</label>
+      <input id="password" type="password" autocomplete="current-password" placeholder="Password" />
+      <div class="row-btns">
+        <button id="loginBtn" class="primary" type="submit">Sign in</button>
+        <button id="forgotBtn" class="ghost" type="button">Forgot password</button>
+      </div>
+      <p id="error" class="error"></p>
+    </form>
   </div>
-</form>
-  <p id="error" class="bad"></p>
 </div>
 <div id="app" class="hide">
   <header>
-    <h1>Skill4Handel Admin</h1>
+    <h1 style="margin:0;font-size:20px">Skill4Handel Admin</h1>
     <div>
       <button id="refreshBtn" type="button">Refresh</button>
       <button id="logoutBtn" type="button">Logout</button>
@@ -142,12 +169,11 @@ async function forgot() {
   }
   $("error").textContent = "Sending reset email...";
   try {
-    const res = await fetch(api + "/auth/forgot-password", {
+    await fetch(api + "/auth/forgot-password", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: email })
     });
-    await res.json().catch(function() { return {}; });
     $("error").textContent = "If this email exists, a reset message was sent.";
   } catch (err) {
     $("error").textContent = "Could not reach the server.";
@@ -166,7 +192,7 @@ async function loadAll() {
     }
     await Promise.all([loadStats(), loadTickets(), loadUsers(), loadExchanges()]);
   } catch (err) {
-    $("stats").innerHTML = "<p class=bad>Could not load the panel. Refresh the page.</p>";
+    $("stats").innerHTML = "<p class=error>Could not load the panel. Refresh the page.</p>";
   }
 }
 async function loadStats() {
@@ -198,7 +224,7 @@ async function loadExchanges() {
   $("exchanges").innerHTML = offerTable(rows);
 }
 function ticketTable(rows) {
-  if (!Array.isArray(rows)) return "<p class=bad>Could not load</p>";
+  if (!Array.isArray(rows)) return "<p class=error>Could not load</p>";
   if (!rows.length) return "<p>No rows</p>";
   return "<table><tr><th>id</th><th>member</th><th>type</th><th>subject</th><th>status</th><th></th></tr>" +
     rows.map(function(row) {
@@ -210,7 +236,7 @@ function ticketTable(rows) {
     }).join("") + "</table>";
 }
 function userTable(rows) {
-  if (!Array.isArray(rows)) return "<p class=bad>Could not load</p>";
+  if (!Array.isArray(rows)) return "<p class=error>Could not load</p>";
   if (!rows.length) return "<p>No rows</p>";
   return "<table><tr><th>id</th><th>name</th><th>email</th><th>city</th><th>balance</th><th>status</th><th></th></tr>" +
     rows.map(function(row) {
@@ -233,7 +259,7 @@ function userTable(rows) {
     }).join("") + "</table>";
 }
 function offerTable(rows) {
-  if (!Array.isArray(rows)) return "<p class=bad>Could not load</p>";
+  if (!Array.isArray(rows)) return "<p class=error>Could not load</p>";
   if (!rows.length) return "<p>No rows</p>";
   return "<table><tr><th>id</th><th>from</th><th>to</th><th>requested</th><th>status</th><th>tokens</th><th></th></tr>" +
     rows.map(function(row) {
@@ -256,9 +282,7 @@ async function openTicket(id) {
   currentTicket = id;
   const row = await fetch(api + "/admin/tickets/" + id, { headers: headers() }).then(function(r) { return r.json(); });
   $("ticketTitle").textContent = "Ticket #" + row.id + " · " + (row.type || "") + " · " + (row.name || "");
-  $("ticketBody").textContent = "Member: " + (row.name || "") + "\nOther: " + (row.other_name || "-") +
-    "\nStatus: " + (row.status || "") + "\nCreated: " + (row.created_at || "") + "\n\n" +
-    (row.text || "") + "\n" + (row.admin_reply || "");
+  $("ticketBody").textContent = ["Member: " + (row.name || ""), "Other: " + (row.other_name || "-"), "Status: " + (row.status || ""), "Created: " + (row.created_at || ""), "", row.text || "", row.admin_reply || ""].join(String.fromCharCode(10));
   $("ticketReply").value = "";
   $("ticketBox").showModal();
 }
@@ -303,7 +327,6 @@ async function act(url, method, body) {
 document.addEventListener("click", async function(event) {
   const t = event.target;
   if (!t || !t.getAttribute) return;
-  if (t.id === "loginBtn") return login();
   if (t.id === "forgotBtn") return forgot();
   if (t.id === "logoutBtn") return logout();
   if (t.id === "refreshBtn") return loadAll();
