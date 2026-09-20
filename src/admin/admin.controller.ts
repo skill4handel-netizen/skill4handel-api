@@ -42,7 +42,7 @@ export class AdminController {
     <h2>Skill4Handel Admin</h2>
     <input id="email" placeholder="admin email" style="width:90%" />
     <input id="password" type="password" placeholder="password" style="width:90%" />
-    <div><button onclick="login()">Enter</button></div>
+    <div><button onclick="login()">Enter</button> <button onclick="forgot()">Forgot password</button></div>
     <p id="error" class="bad"></p>
   </div>
   <div id="app" class="hide">
@@ -112,31 +112,67 @@ function showTab(name, btn) {
   if (btn) btn.classList.add('on');
 }
 async function login() {
-  document.getElementById('error').textContent = '';
-  const res = await fetch(api + '/admin/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      email: document.getElementById('email').value,
-      password: document.getElementById('password').value
-    })
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    document.getElementById('error').textContent = data.message || 'Login failed';
+  const box = document.getElementById('error');
+  box.textContent = 'Signing in...';
+  try {
+    const res = await fetch(api + '/admin/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: document.getElementById('email').value,
+        password: document.getElementById('password').value
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      box.textContent = data.message || 'Login failed';
+      return;
+    }
+    localStorage.setItem('adminToken', data.token);
+    document.getElementById('login').className = 'hide';
+    document.getElementById('app').className = '';
+    loadAll();
+  } catch (err) {
+    box.textContent = 'Could not reach the server. Wait and try again.';
+  }
+}
+async function forgot() {
+  const box = document.getElementById('error');
+  const email = document.getElementById('email').value.trim();
+  if (!email) {
+    box.textContent = 'Enter the admin email first.';
     return;
   }
-  localStorage.setItem('adminToken', data.token);
-  document.getElementById('login').className = 'hide';
-  document.getElementById('app').className = '';
-  loadAll();
+  box.textContent = 'Sending reset email...';
+  try {
+    const res = await fetch(api + '/auth/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
+    });
+    const data = await res.json().catch(() => ({}));
+    box.textContent = data.message || data.ok === false
+      ? (data.message || 'Could not send reset email')
+      : 'If this email exists, a reset message was sent.';
+  } catch (err) {
+    box.textContent = 'Could not reach the server.';
+  }
 }
 function logout() {
   localStorage.removeItem('adminToken');
   location.reload();
 }
 async function loadAll() {
-  await Promise.all([loadStats(), loadTickets(), loadUsers(), loadExchanges()]);
+  try {
+    const probe = await fetch(api + '/admin/stats', { headers: headers() });
+    if (probe.status === 401 || probe.status === 403) {
+      logout();
+      return;
+    }
+    await Promise.all([loadStats(), loadTickets(), loadUsers(), loadExchanges()]);
+  } catch (err) {
+    document.getElementById('stats').innerHTML = '<p class="bad">Could not load the panel. Refresh the page.</p>';
+  }
 }
 async function loadStats() {
   const s = await fetch(api + '/admin/stats', { headers: headers() }).then(r => r.json());
