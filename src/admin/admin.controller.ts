@@ -11,351 +11,344 @@ export class AdminController {
     return `<!doctype html>
 <html>
 <head>
-  <meta charset="utf-8" />
-  <title>Skill4Handel Admin</title>
-  <style>
-    body { font-family: Arial, sans-serif; margin: 0; background: #eef2f7; color: #122; }
-    header { background: #12345a; color: #fff; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }
-    main { padding: 20px; }
-    h1,h2,h3 { margin: 0 0 12px; }
-    .card { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
-    .stat { background: #f7f9fc; border-radius: 10px; padding: 12px; }
-    .stat b { display: block; font-size: 22px; }
-    input, button, select { padding: 8px 10px; margin: 4px 4px 4px 0; }
-    button { cursor: pointer; }
-    table { width: 100%; border-collapse: collapse; font-size: 14px; }
-    th, td { border-bottom: 1px solid #eee; padding: 8px; text-align: left; vertical-align: top; }
-    .bad { color: #b42318; }
-    .ok { color: #067647; }
-    a { color: #1b4f8a; }
-    .tabs button { border: 0; background: #d9e2ef; border-radius: 8px; }
-    .tabs button.on { background: #12345a; color: #fff; }
-    dialog { border: 0; border-radius: 12px; padding: 20px; width: min(720px, 92vw); }
-    dialog::backdrop { background: rgba(0,0,0,.35); }
-    pre { white-space: pre-wrap; background: #f6f7fb; padding: 12px; border-radius: 8px; }
-    .hide { display: none; }
-  </style>
+<meta charset="utf-8" />
+<title>Skill4Handel Admin</title>
+<style>
+body { font-family: Arial, sans-serif; margin: 0; background: #eef2f7; color: #122; }
+header { background: #12345a; color: #fff; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }
+main { padding: 20px; }
+.card { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.stat { background: #f7f9fc; border-radius: 10px; padding: 12px; }
+.stat b { display: block; font-size: 22px; }
+input, button, select, textarea { padding: 8px 10px; margin: 4px 4px 4px 0; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { border-bottom: 1px solid #eee; padding: 8px; text-align: left; vertical-align: top; }
+.bad { color: #b42318; }
+.hide { display: none; }
+.tabs button { border: 0; background: #d9e2ef; border-radius: 8px; padding: 8px 12px; }
+.tabs button.on { background: #12345a; color: #fff; }
+dialog { border: 0; border-radius: 12px; padding: 20px; width: min(720px, 92vw); }
+pre { white-space: pre-wrap; background: #f6f7fb; padding: 12px; border-radius: 8px; }
+</style>
 </head>
 <body>
-  <div id="login" class="card" style="max-width:420px;margin:80px auto">
-    <h2>Skill4Handel Admin</h2>
-    <input id="email" placeholder="admin email" style="width:90%" />
-    <input id="password" type="password" placeholder="password" style="width:90%" />
-    <div><button onclick="login()">Enter</button> <button onclick="forgot()">Forgot password</button></div>
-    <p id="error" class="bad"></p>
+<div id="login" class="card" style="max-width:420px;margin:80px auto">
+  <h2>Skill4Handel Admin</h2>
+  <input id="email" placeholder="admin email" style="width:90%" />
+  <input id="password" type="password" placeholder="password" style="width:90%" />
+  <div>
+    <button id="loginBtn" type="button">Enter</button>
+    <button id="forgotBtn" type="button">Forgot password</button>
   </div>
-  <div id="app" class="hide">
-    <header>
-      <h1>Skill4Handel Admin</h1>
-      <div>
-        <button onclick="loadAll()">Refresh</button>
-        <button onclick="logout()">Logout</button>
-      </div>
-    </header>
-    <main>
-      <div class="card grid" id="stats"></div>
-      <div class="card tabs">
-        <button class="on" onclick="showTab('tickets', this)">Tickets</button>
-        <button onclick="showTab('users', this)">Users</button>
-        <button onclick="showTab('exchanges', this)">Exchanges</button>
-      </div>
-      <div id="tab-tickets" class="card">
-        <h2>Tickets</h2>
-        <select id="ticketFilter" onchange="loadTickets()">
-          <option value="">All</option>
-          <option value="open">Open</option>
-          <option value="closed">Closed</option>
-        </select>
-        <div id="tickets"></div>
-      </div>
-      <div id="tab-users" class="card hide">
-        <h2>Users</h2>
-        <input id="userQuery" placeholder="Search name, email or city" />
-        <button onclick="loadUsers()">Search</button>
-        <div id="users"></div>
-        <div id="userDetail"></div>
-      </div>
-      <div id="tab-exchanges" class="card hide">
-        <h2>Exchanges</h2>
-        <select id="offerFilter" onchange="loadExchanges()">
-          <option value="">All</option>
-          <option value="PROPOSED">Proposed</option>
-          <option value="COUNTERED">Countered</option>
-          <option value="ACCEPTED">Accepted</option>
-          <option value="CANCELLED">Cancelled</option>
-          <option value="SETTLED">Settled</option>
-        </select>
-        <div id="exchanges"></div>
-      </div>
-    </main>
-  </div>
-  <dialog id="ticketBox">
-    <h2 id="ticketTitle">Ticket</h2>
-    <pre id="ticketBody"></pre>
-    <textarea id="ticketReply" rows="4" style="width:100%" placeholder="Admin reply"></textarea>
+  <p id="error" class="bad"></p>
+</div>
+<div id="app" class="hide">
+  <header>
+    <h1>Skill4Handel Admin</h1>
     <div>
-      <button onclick="replyTicket()">Save reply and close</button>
-      <button onclick="document.getElementById('ticketBox').close()">Close</button>
+      <button id="refreshBtn" type="button">Refresh</button>
+      <button id="logoutBtn" type="button">Logout</button>
     </div>
-  </dialog>
+  </header>
+  <main>
+    <div class="card grid" id="stats"></div>
+    <div class="card tabs">
+      <button type="button" data-tab="tickets" class="on">Tickets</button>
+      <button type="button" data-tab="users">Users</button>
+      <button type="button" data-tab="exchanges">Exchanges</button>
+    </div>
+    <div id="tab-tickets" class="card">
+      <h2>Tickets</h2>
+      <select id="ticketFilter">
+        <option value="">All</option>
+        <option value="open">Open</option>
+        <option value="closed">Closed</option>
+      </select>
+      <div id="tickets"></div>
+    </div>
+    <div id="tab-users" class="card hide">
+      <h2>Users</h2>
+      <input id="userQuery" placeholder="Search name, email or city" />
+      <button id="searchBtn" type="button">Search</button>
+      <div id="users"></div>
+      <div id="userDetail"></div>
+    </div>
+    <div id="tab-exchanges" class="card hide">
+      <h2>Exchanges</h2>
+      <select id="offerFilter">
+        <option value="">All</option>
+        <option value="PROPOSED">Proposed</option>
+        <option value="COUNTERED">Countered</option>
+        <option value="ACCEPTED">Accepted</option>
+        <option value="CANCELLED">Cancelled</option>
+        <option value="SETTLED">Settled</option>
+      </select>
+      <div id="exchanges"></div>
+    </div>
+  </main>
+</div>
+<dialog id="ticketBox">
+  <h2 id="ticketTitle">Ticket</h2>
+  <pre id="ticketBody"></pre>
+  <textarea id="ticketReply" rows="4" style="width:100%" placeholder="Admin reply"></textarea>
+  <div>
+    <button id="replyBtn" type="button">Save reply and close</button>
+    <button id="closeBoxBtn" type="button">Close</button>
+  </div>
+</dialog>
 <script>
-const api = '';
+const api = "";
 let currentTicket = 0;
-function token() { return localStorage.getItem('adminToken') || ''; }
-function headers() { return { Authorization: 'Bearer ' + token(), 'Content-Type': 'application/json' }; }
-function showTab(name, btn) {
-  ['tickets','users','exchanges'].forEach(id => {
-    document.getElementById('tab-' + id).className = 'card' + (id === name ? '' : ' hide');
+function token() { return localStorage.getItem("adminToken") || ""; }
+function headers() { return { Authorization: "Bearer " + token(), "Content-Type": "application/json" }; }
+function $(id) { return document.getElementById(id); }
+function showTab(name) {
+  ["tickets","users","exchanges"].forEach(function(id) {
+    $("tab-" + id).className = "card" + (id === name ? "" : " hide");
   });
-  document.querySelectorAll('.tabs button').forEach(el => el.classList.remove('on'));
-  if (btn) btn.classList.add('on');
+  document.querySelectorAll(".tabs button").forEach(function(el) {
+    el.className = el.getAttribute("data-tab") === name ? "on" : "";
+  });
 }
 async function login() {
-  const box = document.getElementById('error');
-  box.textContent = 'Signing in...';
+  $("error").textContent = "Signing in...";
   try {
-    const res = await fetch(api + '/admin/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: document.getElementById('email').value,
-        password: document.getElementById('password').value
-      })
+    const res = await fetch(api + "/admin/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: $("email").value, password: $("password").value })
     });
-    const data = await res.json().catch(() => ({}));
+    const data = await res.json().catch(function() { return {}; });
     if (!res.ok) {
-      box.textContent = data.message || 'Login failed';
+      $("error").textContent = data.message || "Login failed";
       return;
     }
-    localStorage.setItem('adminToken', data.token);
-    document.getElementById('login').className = 'hide';
-    document.getElementById('app').className = '';
+    localStorage.setItem("adminToken", data.token);
+    $("login").className = "hide";
+    $("app").className = "";
     loadAll();
   } catch (err) {
-    box.textContent = 'Could not reach the server. Wait and try again.';
+    $("error").textContent = "Could not reach the server. Wait and try again.";
   }
 }
 async function forgot() {
-  const box = document.getElementById('error');
-  const email = document.getElementById('email').value.trim();
+  const email = $("email").value.trim();
   if (!email) {
-    box.textContent = 'Enter the admin email first.';
+    $("error").textContent = "Enter the admin email first.";
     return;
   }
-  box.textContent = 'Sending reset email...';
+  $("error").textContent = "Sending reset email...";
   try {
-    const res = await fetch(api + '/auth/forgot-password', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email })
+    const res = await fetch(api + "/auth/forgot-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: email })
     });
-    const data = await res.json().catch(() => ({}));
-    box.textContent = data.message || data.ok === false
-      ? (data.message || 'Could not send reset email')
-      : 'If this email exists, a reset message was sent.';
+    await res.json().catch(function() { return {}; });
+    $("error").textContent = "If this email exists, a reset message was sent.";
   } catch (err) {
-    box.textContent = 'Could not reach the server.';
+    $("error").textContent = "Could not reach the server.";
   }
 }
 function logout() {
-  localStorage.removeItem('adminToken');
+  localStorage.removeItem("adminToken");
   location.reload();
 }
 async function loadAll() {
   try {
-    const probe = await fetch(api + '/admin/stats', { headers: headers() });
+    const probe = await fetch(api + "/admin/stats", { headers: headers() });
     if (probe.status === 401 || probe.status === 403) {
       logout();
       return;
     }
     await Promise.all([loadStats(), loadTickets(), loadUsers(), loadExchanges()]);
   } catch (err) {
-    document.getElementById('stats').innerHTML = '<p class="bad">Could not load the panel. Refresh the page.</p>';
+    $("stats").innerHTML = "<p class=bad>Could not load the panel. Refresh the page.</p>";
   }
 }
 async function loadStats() {
-  const s = await fetch(api + '/admin/stats', { headers: headers() }).then(r => r.json());
-  document.getElementById('stats').innerHTML =
-    stat('Users', s.users && s.users.total) +
-    stat('Verified', s.users && s.users.verified) +
-    stat('Suspended', s.users && s.users.suspended) +
-    stat('Open tickets', s.tickets && s.tickets.open) +
-    stat('Pending offers', s.offers && s.offers.pending) +
-    stat('Completed offers', s.offers && s.offers.completed);
+  const s = await fetch(api + "/admin/stats", { headers: headers() }).then(function(r) { return r.json(); });
+  $("stats").innerHTML =
+    stat("Users", s.users && s.users.total) +
+    stat("Verified", s.users && s.users.verified) +
+    stat("Suspended", s.users && s.users.suspended) +
+    stat("Open tickets", s.tickets && s.tickets.open) +
+    stat("Pending offers", s.offers && s.offers.pending) +
+    stat("Completed offers", s.offers && s.offers.completed);
 }
 function stat(label, value) {
-  return '<div class="stat"><b>'+ (value ?? '-') +'</b>'+ label +'</div>';
+  return "<div class=stat><b>" + (value == null ? "-" : value) + "</b>" + label + "</div>";
 }
 async function loadTickets() {
-  const status = document.getElementById('ticketFilter').value;
-  const rows = await fetch(api + '/admin/tickets?status=' + status, { headers: headers() }).then(r => r.json());
-  document.getElementById('tickets').innerHTML = ticketTable(rows);
+  const status = $("ticketFilter").value;
+  const rows = await fetch(api + "/admin/tickets?status=" + status, { headers: headers() }).then(function(r) { return r.json(); });
+  $("tickets").innerHTML = ticketTable(rows);
 }
 async function loadUsers() {
-  const q = document.getElementById('userQuery').value || '';
-  const rows = await fetch(api + '/admin/users?q=' + encodeURIComponent(q), { headers: headers() }).then(r => r.json());
-  document.getElementById('users').innerHTML = userTable(rows);
+  const q = $("userQuery").value || "";
+  const rows = await fetch(api + "/admin/users?q=" + encodeURIComponent(q), { headers: headers() }).then(function(r) { return r.json(); });
+  $("users").innerHTML = userTable(rows);
 }
 async function loadExchanges() {
-  const status = document.getElementById('offerFilter').value;
-  const rows = await fetch(api + '/admin/exchanges?status=' + status, { headers: headers() }).then(r => r.json());
-  document.getElementById('exchanges').innerHTML = offerTable(rows);
+  const status = $("offerFilter").value;
+  const rows = await fetch(api + "/admin/exchanges?status=" + status, { headers: headers() }).then(function(r) { return r.json(); });
+  $("exchanges").innerHTML = offerTable(rows);
 }
 function ticketTable(rows) {
-  if (!Array.isArray(rows)) return '<p class="bad">Could not load</p>';
-  if (!rows.length) return '<p>No rows</p>';
-  return '<table><tr><th>id</th><th>member</th><th>type</th><th>subject</th><th>status</th><th></th></tr>' +
-    rows.map(row => '<tr>' +
-      '<td>'+row.id+'</td>' +
-      '<td>'+(row.name||'')+'</td>' +
-      '<td>'+(row.type||'')+'</td>' +
-      '<td><a href="#" onclick="openTicket('+row.id+');return false;">Open ticket</a></td>' +
-      '<td>'+(row.status||'open')+'</td>' +
-      '<td>'+(row.status !== 'closed' ? '<button onclick="closeTicket('+row.id+')">Close</button>' : '')+'</td>' +
-    '</tr>').join('') + '</table>';
+  if (!Array.isArray(rows)) return "<p class=bad>Could not load</p>";
+  if (!rows.length) return "<p>No rows</p>";
+  return "<table><tr><th>id</th><th>member</th><th>type</th><th>subject</th><th>status</th><th></th></tr>" +
+    rows.map(function(row) {
+      return "<tr><td>" + row.id + "</td><td>" + (row.name || "") + "</td><td>" + (row.type || "") +
+        "</td><td><button type=button data-open-ticket=" + row.id + ">Open ticket</button></td><td>" +
+        (row.status || "open") + "</td><td>" +
+        (row.status !== "closed" ? "<button type=button data-close-ticket=" + row.id + ">Close</button>" : "") +
+        "</td></tr>";
+    }).join("") + "</table>";
 }
 function userTable(rows) {
-  if (!Array.isArray(rows)) return '<p class="bad">Could not load</p>';
-  if (!rows.length) return '<p>No rows</p>';
-  return '<table><tr><th>id</th><th>name</th><th>email</th><th>city</th><th>balance</th><th>status</th><th></th></tr>' +
-    rows.map(row => {
-      const roleBtn = row.role === 'admin'
-        ? '<button onclick="setRole('+row.id+', \\'user\\')">Make user</button>'
-        : '<button onclick="setRole('+row.id+', \\'admin\\')">Make admin</button>';
-      const susBtn = row.role === 'admin' ? '' : (row.is_suspended
-        ? '<button onclick="setUser('+row.id+', false)">Unsuspend</button>'
-        : '<button onclick="setUser('+row.id+', true)">Suspend</button>');
-      const delBtn = row.role === 'admin' ? '' : '<button onclick="deleteUser('+row.id+', \\''+String(row.name||'').replace(/'/g,'')+'\\')">Delete</button>';
-      const verifyBtn = row.email_verified ? '' : '<button onclick="verifyUser('+row.id+')">Verify email</button>';
-      return '<tr>' +
-        '<td>'+row.id+'</td>' +
-        '<td><a href="#" onclick="openUser('+row.id+');return false;">'+(row.name||'')+'</a></td>' +
-        '<td>'+(row.email||'')+'</td>' +
-        '<td>'+(row.city||'')+'</td>' +
-        '<td>'+(row.balance??'')+'</td>' +
-        '<td>'+(row.is_suspended ? 'suspended' : (row.email_verified ? (row.role||'user') : 'unverified'))+'</td>' +
-        '<td>'+verifyBtn+' <button onclick="setPassword('+row.id+')">Password</button> <button onclick="adjustWallet('+row.id+')">Wallet</button> '+roleBtn+' '+susBtn+' '+delBtn+'</td>' +
-      '</tr>';
-    }).join('') + '</table>';
+  if (!Array.isArray(rows)) return "<p class=bad>Could not load</p>";
+  if (!rows.length) return "<p>No rows</p>";
+  return "<table><tr><th>id</th><th>name</th><th>email</th><th>city</th><th>balance</th><th>status</th><th></th></tr>" +
+    rows.map(function(row) {
+      const roleBtn = row.role === "admin"
+        ? "<button type=button data-role-user=" + row.id + ">Make user</button>"
+        : "<button type=button data-role-admin=" + row.id + ">Make admin</button>";
+      const susBtn = row.role === "admin" ? "" : (row.is_suspended
+        ? "<button type=button data-unsuspend=" + row.id + ">Unsuspend</button>"
+        : "<button type=button data-suspend=" + row.id + ">Suspend</button>");
+      const delBtn = row.role === "admin" ? "" : "<button type=button data-delete-user=" + row.id + ">Delete</button>";
+      const verifyBtn = row.email_verified ? "" : "<button type=button data-verify=" + row.id + ">Verify email</button>";
+      return "<tr><td>" + row.id + "</td><td><button type=button data-open-user=" + row.id + ">" + (row.name || "") +
+        "</button></td><td>" + (row.email || "") + "</td><td>" + (row.city || "") + "</td><td>" +
+        (row.balance == null ? "" : row.balance) + "</td><td>" +
+        (row.is_suspended ? "suspended" : (row.email_verified ? (row.role || "user") : "unverified")) +
+        "</td><td>" + verifyBtn +
+        " <button type=button data-password=" + row.id + ">Password</button>" +
+        " <button type=button data-wallet=" + row.id + ">Wallet</button> " +
+        roleBtn + " " + susBtn + " " + delBtn + "</td></tr>";
+    }).join("") + "</table>";
 }
 function offerTable(rows) {
-  if (!Array.isArray(rows)) return '<p class="bad">Could not load</p>';
-  if (!rows.length) return '<p>No rows</p>';
-  return '<table><tr><th>id</th><th>from</th><th>to</th><th>requested</th><th>status</th><th>tokens</th><th></th></tr>' +
-    rows.map(row => '<tr>' +
-      '<td>'+row.id+'</td>' +
-      '<td>'+(row.name_a||'')+'</td>' +
-      '<td>'+(row.name_b||'')+'</td>' +
-      '<td>'+(row.skill_requested||'')+'</td>' +
-      '<td>'+(row.status||'')+'</td>' +
-      '<td>'+(row.extra_tokens??'')+'</td>' +
-      '<td>'+(['PROPOSED','COUNTERED','ACCEPTED'].includes(row.status) ? '<button onclick="cancelOffer('+row.id+')">Cancel</button>' : '')+'</td>' +
-    '</tr>').join('') + '</table>';
+  if (!Array.isArray(rows)) return "<p class=bad>Could not load</p>";
+  if (!rows.length) return "<p>No rows</p>";
+  return "<table><tr><th>id</th><th>from</th><th>to</th><th>requested</th><th>status</th><th>tokens</th><th></th></tr>" +
+    rows.map(function(row) {
+      const canCancel = row.status === "PROPOSED" || row.status === "COUNTERED" || row.status === "ACCEPTED";
+      return "<tr><td>" + row.id + "</td><td>" + (row.name_a || "") + "</td><td>" + (row.name_b || "") +
+        "</td><td>" + (row.skill_requested || "") + "</td><td>" + (row.status || "") + "</td><td>" +
+        (row.extra_tokens == null ? "" : row.extra_tokens) + "</td><td>" +
+        (canCancel ? "<button type=button data-cancel-offer=" + row.id + ">Cancel</button>" : "") +
+        "</td></tr>";
+    }).join("") + "</table>";
 }
 function table(rows, keys) {
-  if (!Array.isArray(rows)) return '<p class="bad">Could not load</p>';
-  if (!rows.length) return '<p>No rows</p>';
-  return '<table><tr>' + keys.map(k => '<th>'+k+'</th>').join('') + '</tr>' +
-    rows.map(row => '<tr>' + keys.map(k => '<td>'+String(row[k] ?? '')+'</td>').join('') + '</tr>').join('') + '</table>';
+  if (!Array.isArray(rows) || !rows.length) return "<p>No rows</p>";
+  return "<table><tr>" + keys.map(function(k) { return "<th>" + k + "</th>"; }).join("") + "</tr>" +
+    rows.map(function(row) {
+      return "<tr>" + keys.map(function(k) { return "<td>" + String(row[k] == null ? "" : row[k]) + "</td>"; }).join("") + "</tr>";
+    }).join("") + "</table>";
 }
 async function openTicket(id) {
   currentTicket = id;
-  const row = await fetch(api + '/admin/tickets/' + id, { headers: headers() }).then(r => r.json());
-  document.getElementById('ticketTitle').textContent = 'Ticket #' + row.id + ' · ' + (row.type||'') + ' · ' + (row.name||'');
-  document.getElementById('ticketBody').textContent =
-    'Member: ' + (row.name||'') + '\nOther: ' + (row.other_name||'-') + '\nStatus: ' + (row.status||'') +
-    '\nCreated: ' + (row.created_at||'') + '\n\n' + (row.text||'') + '\n' + (row.admin_reply||'');
-  document.getElementById('ticketReply').value = '';
-  document.getElementById('ticketBox').showModal();
+  const row = await fetch(api + "/admin/tickets/" + id, { headers: headers() }).then(function(r) { return r.json(); });
+  $("ticketTitle").textContent = "Ticket #" + row.id + " · " + (row.type || "") + " · " + (row.name || "");
+  $("ticketBody").textContent = "Member: " + (row.name || "") + "\nOther: " + (row.other_name || "-") +
+    "\nStatus: " + (row.status || "") + "\nCreated: " + (row.created_at || "") + "\n\n" +
+    (row.text || "") + "\n" + (row.admin_reply || "");
+  $("ticketReply").value = "";
+  $("ticketBox").showModal();
 }
 async function replyTicket() {
-  const text = document.getElementById('ticketReply').value;
+  const text = $("ticketReply").value;
   if (!text.trim() || !currentTicket) return;
-  await fetch(api + '/admin/tickets/' + currentTicket + '/reply', {
-    method: 'POST', headers: headers(), body: JSON.stringify({ text })
+  await fetch(api + "/admin/tickets/" + currentTicket + "/reply", {
+    method: "POST", headers: headers(), body: JSON.stringify({ text: text })
   });
-  document.getElementById('ticketBox').close();
+  $("ticketBox").close();
   loadTickets();
 }
 async function openUser(id) {
-  const data = await fetch(api + '/admin/users/' + id, { headers: headers() }).then(r => r.json());
+  const data = await fetch(api + "/admin/users/" + id, { headers: headers() }).then(function(r) { return r.json(); });
   const u = data.user || {};
   const a = data.activity || {};
-  const box = document.getElementById('userDetail');
-  box.innerHTML =
-    '<h3>'+(u.name||'')+'</h3>' +
-    '<p>Email: '+(u.email||'')+'<br>City: '+(u.city||'')+'<br>Role: '+(u.role||'')+'<br>Balance: '+(u.balance??'')+'<br>Rating: '+(u.rating??'')+'</p>' +
-    '<p>Account created: '+(u.created_at||'-')+'<br>Last login: '+(u.last_login||u.updated_at||'-')+'</p>' +
-    '<p>Skills offered: '+(u.offers||'-')+'</p>' +
-    '<h3>Recent chats</h3>' + table(a.chats||[], ['id','name_a','name_b','last_message','updated_at']) +
-    '<h3>Offers</h3>' + table(a.offers||[], ['id','status','skill_requested','skill_offered','extra_tokens','updated_at']) +
-    '<h3>Tickets</h3>' + table(a.tickets||[], ['id','type','status','created_at']) +
-    '<h3>Reviews</h3>' + table(a.reviews||[], ['id','rating','text','created_at']) +
-    '<h3>Wallet</h3>' + table(a.wallet||[], ['id','type','amount','title','created_at']);
-  box.scrollIntoView({ behavior: 'smooth' });
+  $("userDetail").innerHTML =
+    "<h3>" + (u.name || "") + "</h3>" +
+    "<p>Email: " + (u.email || "") + "<br>City: " + (u.city || "") + "<br>Role: " + (u.role || "") +
+    "<br>Balance: " + (u.balance == null ? "" : u.balance) + "<br>Rating: " + (u.rating == null ? "" : u.rating) + "</p>" +
+    "<p>Account created: " + (u.created_at || "-") + "<br>Last login: " + (u.last_login || u.updated_at || "-") + "</p>" +
+    "<p>Skills offered: " + (u.offers || "-") + "</p>" +
+    "<h3>Recent chats</h3>" + table(a.chats || [], ["id","name_a","name_b","last_message","updated_at"]) +
+    "<h3>Offers</h3>" + table(a.offers || [], ["id","status","skill_requested","skill_offered","extra_tokens","updated_at"]) +
+    "<h3>Tickets</h3>" + table(a.tickets || [], ["id","type","status","created_at"]) +
+    "<h3>Reviews</h3>" + table(a.reviews || [], ["id","rating","text","created_at"]) +
+    "<h3>Wallet</h3>" + table(a.wallet || [], ["id","type","amount","title","created_at"]);
 }
-async function closeTicket(id) {
-  await fetch(api + '/admin/tickets/' + id + '/close', { method: 'POST', headers: headers() });
-  loadTickets();
-}
-async function setUser(id, suspended) {
-  await fetch(api + '/admin/users/' + id + '/' + (suspended ? 'suspend' : 'unsuspend'), { method: 'POST', headers: headers() });
-  loadUsers();
-}
-async function setRole(id, role) {
-  await fetch(api + '/admin/users/' + id + '/role', { method: 'POST', headers: headers(), body: JSON.stringify({ role }) });
-  loadUsers();
-}
-async function setPassword(id) {
-  const password = prompt('New password');
-  if (!password) return;
-  await fetch(api + '/admin/users/' + id + '/password', { method: 'POST', headers: headers(), body: JSON.stringify({ password }) });
-  alert('Password updated');
-}
-async function verifyUser(id) {
-  await fetch(api + '/admin/users/' + id + '/verify', { method: 'POST', headers: headers() });
-  loadUsers();
-}
-async function adjustWallet(id) {
-  const amount = prompt('Amount. Use +10 to add or -5 to remove.');
-  if (!amount) return;
-  const title = prompt('Note') || 'Admin adjustment';
-  const res = await fetch(api + '/admin/users/' + id + '/wallet', {
-    method: 'POST', headers: headers(), body: JSON.stringify({ amount: Number(amount), title })
+async function act(url, method, body) {
+  const res = await fetch(api + url, {
+    method: method,
+    headers: headers(),
+    body: body ? JSON.stringify(body) : undefined
   });
-  const data = await res.json().catch(() => ({}));
+  const data = await res.json().catch(function() { return {}; });
   if (!res.ok) {
-    alert(data.message || 'Could not update wallet');
+    alert(data.message || "Request failed");
+    return false;
+  }
+  return data;
+}
+document.addEventListener("click", async function(event) {
+  const t = event.target;
+  if (!t || !t.getAttribute) return;
+  if (t.id === "loginBtn") return login();
+  if (t.id === "forgotBtn") return forgot();
+  if (t.id === "logoutBtn") return logout();
+  if (t.id === "refreshBtn") return loadAll();
+  if (t.id === "searchBtn") return loadUsers();
+  if (t.id === "replyBtn") return replyTicket();
+  if (t.id === "closeBoxBtn") return $("ticketBox").close();
+  if (t.getAttribute("data-tab")) return showTab(t.getAttribute("data-tab"));
+  if (t.getAttribute("data-open-ticket")) return openTicket(t.getAttribute("data-open-ticket"));
+  if (t.getAttribute("data-close-ticket")) { await act("/admin/tickets/" + t.getAttribute("data-close-ticket") + "/close", "POST"); return loadTickets(); }
+  if (t.getAttribute("data-open-user")) return openUser(t.getAttribute("data-open-user"));
+  if (t.getAttribute("data-verify")) { await act("/admin/users/" + t.getAttribute("data-verify") + "/verify", "POST"); return loadUsers(); }
+  if (t.getAttribute("data-suspend")) { await act("/admin/users/" + t.getAttribute("data-suspend") + "/suspend", "POST"); return loadUsers(); }
+  if (t.getAttribute("data-unsuspend")) { await act("/admin/users/" + t.getAttribute("data-unsuspend") + "/unsuspend", "POST"); return loadUsers(); }
+  if (t.getAttribute("data-role-user")) { await act("/admin/users/" + t.getAttribute("data-role-user") + "/role", "POST", { role: "user" }); return loadUsers(); }
+  if (t.getAttribute("data-role-admin")) { await act("/admin/users/" + t.getAttribute("data-role-admin") + "/role", "POST", { role: "admin" }); return loadUsers(); }
+  if (t.getAttribute("data-password")) {
+    const password = prompt("New password");
+    if (!password) return;
+    await act("/admin/users/" + t.getAttribute("data-password") + "/password", "POST", { password: password });
+    alert("Password updated");
     return;
   }
-  alert('New balance: ' + data.balance);
-  loadUsers();
-}
-async function cancelOffer(id) {
-  if (!confirm('Cancel this offer as support?')) return;
-  const res = await fetch(api + '/admin/exchanges/' + id + '/cancel', { method: 'POST', headers: headers() });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    alert(data.message || 'Could not cancel');
-    return;
+  if (t.getAttribute("data-wallet")) {
+    const amount = prompt("Amount. Use +10 to add or -5 to remove.");
+    if (!amount) return;
+    const title = prompt("Note") || "Admin adjustment";
+    const data = await act("/admin/users/" + t.getAttribute("data-wallet") + "/wallet", "POST", { amount: Number(amount), title: title });
+    if (data) alert("New balance: " + data.balance);
+    return loadUsers();
   }
-  loadExchanges();
-}
-async function deleteUser(id, name) {
-  if (!confirm('Delete ' + name + ' and all related chats, offers and tickets?')) return;
-  const res = await fetch(api + '/admin/users/' + id, { method: 'DELETE', headers: headers() });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    alert(data.message || 'Could not delete');
-    return;
+  if (t.getAttribute("data-delete-user")) {
+    if (!confirm("Delete this member and all related chats, offers and tickets?")) return;
+    await act("/admin/users/" + t.getAttribute("data-delete-user"), "DELETE");
+    $("userDetail").innerHTML = "";
+    return loadUsers();
   }
-  document.getElementById('userDetail').innerHTML = '';
-  loadUsers();
-}
+  if (t.getAttribute("data-cancel-offer")) {
+    if (!confirm("Cancel this offer as support?")) return;
+    await act("/admin/exchanges/" + t.getAttribute("data-cancel-offer") + "/cancel", "POST");
+    return loadExchanges();
+  }
+});
+$("ticketFilter").addEventListener("change", loadTickets);
+$("offerFilter").addEventListener("change", loadExchanges);
 if (token()) {
-  document.getElementById('login').className = 'hide';
-  document.getElementById('app').className = '';
+  $("login").className = "hide";
+  $("app").className = "";
   loadAll();
 }
 </script>
