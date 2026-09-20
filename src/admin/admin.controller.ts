@@ -235,10 +235,16 @@ function ticketTable(rows) {
         "</td></tr>";
     }).join("") + "</table>";
 }
+function formatTime(value) {
+  if (!value) return "-";
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return String(value);
+  return d.toLocaleString();
+}
 function userTable(rows) {
   if (!Array.isArray(rows)) return "<p class=error>Could not load</p>";
   if (!rows.length) return "<p>No rows</p>";
-  return "<table><tr><th>id</th><th>name</th><th>email</th><th>city</th><th>balance</th><th>status</th><th></th></tr>" +
+  return "<table><tr><th>id</th><th>name</th><th>email</th><th>city</th><th>balance</th><th>created</th><th>last login</th><th>status</th><th></th></tr>" +
     rows.map(function(row) {
       const roleBtn = row.role === "admin"
         ? "<button type=button data-role-user=" + row.id + ">Make user</button>"
@@ -250,7 +256,8 @@ function userTable(rows) {
       const verifyBtn = row.email_verified ? "" : "<button type=button data-verify=" + row.id + ">Verify email</button>";
       return "<tr><td>" + row.id + "</td><td><button type=button data-open-user=" + row.id + ">" + (row.name || "") +
         "</button></td><td>" + (row.email || "") + "</td><td>" + (row.city || "") + "</td><td>" +
-        (row.balance == null ? "" : row.balance) + "</td><td>" +
+        (row.balance == null ? "" : row.balance) + "</td><td>" + formatTime(row.created_at) +
+        "</td><td>" + formatTime(row.last_login || row.updated_at) + "</td><td>" +
         (row.is_suspended ? "suspended" : (row.email_verified ? (row.role || "user") : "unverified")) +
         "</td><td>" + verifyBtn +
         " <button type=button data-password=" + row.id + ">Password</button>" +
