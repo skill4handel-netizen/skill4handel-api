@@ -1,65 +1,64 @@
-import { Body, Controller, Delete, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Req } from '@nestjs/common';
 import { ChatService } from './chat.service';
+import { userIdFromRequest } from '../auth/http-user';
 
 @Controller('chats')
 export class ChatController {
   constructor(private readonly chatService: ChatService) {}
 
   @Get()
-  list(@Query('userId') userId: string) {
-    return this.chatService.list(Number(userId));
+  list(@Req() req: any) {
+    return this.chatService.list(userIdFromRequest(req));
   }
 
   @Get('history')
-  history(@Query('userId') userId: string) {
-    return this.chatService.history(Number(userId));
+  history(@Req() req: any) {
+    return this.chatService.history(userIdFromRequest(req));
   }
 
   @Get(':id')
-  get(@Param('id') id: string, @Query('userId') userId: string) {
-    return this.chatService.get(Number(id), userId ? Number(userId) : undefined);
+  get(@Param('id') id: string, @Req() req: any) {
+    return this.chatService.get(Number(id), userIdFromRequest(req));
   }
 
   @Post('open')
-  open(
-    @Body()
-    body: { myId: number; myName: string; otherId: number; otherName: string },
-  ) {
-    return this.chatService.open(body.myId, body.myName, body.otherId, body.otherName);
+  open(@Req() req: any, @Body() body: { myName?: string; otherId: number; otherName: string }) {
+    const myId = userIdFromRequest(req);
+    return this.chatService.open(myId, body.myName || '', Number(body.otherId), body.otherName);
   }
 
   @Post(':id/messages')
-  send(@Param('id') id: string, @Body() body: { fromId: number; text: string }) {
-    return this.chatService.send(Number(id), body.fromId, body.text);
+  send(@Param('id') id: string, @Req() req: any, @Body() body: { text: string }) {
+    return this.chatService.send(Number(id), userIdFromRequest(req), body.text);
   }
 
   @Post(':id/swap')
-  propose(@Param('id') id: string, @Body() body: any) {
-    return this.chatService.proposeSwap(Number(id), Number(body.userId), body);
+  propose(@Param('id') id: string, @Req() req: any, @Body() body: any) {
+    return this.chatService.proposeSwap(Number(id), userIdFromRequest(req), body);
   }
 
   @Post(':id/swap/respond')
-  respond(@Param('id') id: string, @Body() body: any) {
-    return this.chatService.respondSwap(Number(id), Number(body.userId), body.action, body);
+  respond(@Param('id') id: string, @Req() req: any, @Body() body: any) {
+    return this.chatService.respondSwap(Number(id), userIdFromRequest(req), body.action, body);
   }
 
   @Post(':id/swap/cancel')
-  cancel(@Param('id') id: string, @Body() body: { userId: number }) {
-    return this.chatService.cancelSwap(Number(id), Number(body.userId));
+  cancel(@Param('id') id: string, @Req() req: any) {
+    return this.chatService.cancelSwap(Number(id), userIdFromRequest(req));
   }
 
   @Post(':id/swap/done')
-  done(@Param('id') id: string, @Body() body: { userId: number }) {
-    return this.chatService.markDone(Number(id), Number(body.userId));
+  done(@Param('id') id: string, @Req() req: any) {
+    return this.chatService.markDone(Number(id), userIdFromRequest(req));
   }
 
   @Post(':id/reviewed')
-  reviewed(@Param('id') id: string, @Body() body: { userId: number }) {
-    return this.chatService.markReviewed(Number(id), Number(body.userId));
+  reviewed(@Param('id') id: string, @Req() req: any) {
+    return this.chatService.markReviewed(Number(id), userIdFromRequest(req));
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string, @Query('userId') userId: string) {
-    return this.chatService.remove(Number(id), Number(userId));
+  remove(@Param('id') id: string, @Req() req: any) {
+    return this.chatService.remove(Number(id), userIdFromRequest(req));
   }
 }

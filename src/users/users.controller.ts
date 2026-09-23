@@ -1,13 +1,14 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param, Req } from '@nestjs/common';
 import { AuthService } from '../auth/auth.service';
+import { userIdFromRequest } from '../auth/http-user';
 
 @Controller('users')
 export class UsersController {
   constructor(private readonly authService: AuthService) {}
 
   @Get()
-  list(@Query('userId') userId?: string) {
-    return this.authService.listUsers(Number(userId || 0));
+  list(@Req() req: any) {
+    return this.authService.listUsers(userIdFromRequest(req));
   }
 
   @Get(':id')

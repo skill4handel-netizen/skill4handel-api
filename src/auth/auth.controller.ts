@@ -1,6 +1,7 @@
-import { Body, Controller, Delete, Get, Header, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, Post, Query, Req } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { NotifyService } from '../notify/notify.service';
+import { userIdFromRequest } from './http-user';
 
 @Controller('auth')
 export class AuthController {
@@ -10,8 +11,8 @@ export class AuthController {
   ) {}
 
   @Get('me')
-  me(@Query('userId') userId: string) {
-    return this.authService.me(Number(userId));
+  me(@Req() req: any) {
+    return this.authService.me(userIdFromRequest(req));
   }
 
   @Post('signup')
@@ -70,14 +71,14 @@ export class AuthController {
   }
 
   @Post('device-token')
-  deviceToken(@Body() body: any) {
-    return this.authService.saveDeviceToken(Number(body.userId), body.token, body.platform);
+  deviceToken(@Req() req: any, @Body() body: any) {
+    return this.authService.saveDeviceToken(userIdFromRequest(req), body.token, body.platform);
   }
 
   @Post('test-push')
-  testPush(@Body() body: any) {
+  testPush(@Req() req: any) {
     return this.notify.sendToUser(
-      Number(body.userId),
+      userIdFromRequest(req),
       'Skill4Handel',
       'Test notification. If you see this, push is working.',
       { type: 'test' },
@@ -90,52 +91,52 @@ export class AuthController {
   }
 
   @Post('change-password')
-  changePassword(@Body() body: any) {
-    return this.authService.changePassword(Number(body.userId), body.currentPassword, body.newPassword);
+  changePassword(@Req() req: any, @Body() body: any) {
+    return this.authService.changePassword(userIdFromRequest(req), body.currentPassword, body.newPassword);
   }
 
   @Post('profile')
-  profile(@Body() body: any) {
-    return this.authService.updateProfile(body);
+  profile(@Req() req: any, @Body() body: any) {
+    return this.authService.updateProfile({ ...body, id: userIdFromRequest(req) });
   }
 
   @Post('photo')
-  photo(@Body() body: any) {
-    return this.authService.setPhoto(body.id, body.photoUrl);
+  photo(@Req() req: any, @Body() body: any) {
+    return this.authService.setPhoto(userIdFromRequest(req), body.photoUrl);
   }
 
   @Post('review')
-  review(@Body() body: any) {
-    return this.authService.addReview(body);
+  review(@Req() req: any, @Body() body: any) {
+    return this.authService.addReview({ ...body, fromId: userIdFromRequest(req) });
   }
 
   @Post('transfer')
-  transfer(@Body() body: any) {
-    return this.authService.transfer(body);
+  transfer(@Req() req: any, @Body() body: any) {
+    return this.authService.transfer({ ...body, fromId: userIdFromRequest(req), userId: userIdFromRequest(req) });
   }
 
   @Delete('transaction')
-  deleteTransaction(@Query('userId') userId: string, @Query('id') id: string) {
-    return this.authService.deleteTransaction(Number(userId), Number(id));
+  deleteTransaction(@Req() req: any, @Query('id') id: string) {
+    return this.authService.deleteTransaction(userIdFromRequest(req), Number(id));
   }
 
   @Post('ticket')
-  ticket(@Body() body: any) {
-    return this.authService.addTicket(body);
+  ticket(@Req() req: any, @Body() body: any) {
+    return this.authService.addTicket({ ...body, userId: userIdFromRequest(req) });
   }
 
   @Get('blocks')
-  blocks(@Query('userId') userId: string) {
-    return this.authService.listBlocks(Number(userId));
+  blocks(@Req() req: any) {
+    return this.authService.listBlocks(userIdFromRequest(req));
   }
 
   @Post('block')
-  block(@Body() body: any) {
-    return this.authService.block(Number(body.userId), Number(body.otherId));
+  block(@Req() req: any, @Body() body: any) {
+    return this.authService.block(userIdFromRequest(req), Number(body.otherId));
   }
 
   @Post('unblock')
-  unblock(@Body() body: any) {
-    return this.authService.unblock(Number(body.userId), Number(body.otherId));
+  unblock(@Req() req: any, @Body() body: any) {
+    return this.authService.unblock(userIdFromRequest(req), Number(body.otherId));
   }
 }
