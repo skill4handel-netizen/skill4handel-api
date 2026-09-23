@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, Header, Param, Post, Query, Req } from '@nestjs/common';
 import { AdminService } from './admin.service';
+import { requireAdmin } from '../auth/admin-auth';
 import { enforceThrottle } from '../auth/throttle';
 
 @Controller('admin')
@@ -400,82 +401,98 @@ if (token()) {
   }
 
   @Get('stats')
-  stats() {
+  async stats(@Req() req: any) {
+    await requireAdmin(req);
     return this.adminService.stats();
   }
 
   @Get('users')
-  users(@Query('q') q?: string) {
+  async users(@Req() req: any, @Query('q') q?: string) {
+    await requireAdmin(req);
     return this.adminService.listUsers(q || '');
   }
 
   @Get('users/:id')
-  user(@Param('id') id: string) {
+  async user(@Req() req: any, @Param('id') id: string) {
+    await requireAdmin(req);
     return this.adminService.getUser(Number(id));
   }
 
   @Delete('users/:id')
-  removeUser(@Param('id') id: string) {
+  async removeUser(@Req() req: any, @Param('id') id: string) {
+    await requireAdmin(req);
     return this.adminService.deleteUser(Number(id));
   }
 
   @Post('users/:id/suspend')
-  suspend(@Param('id') id: string) {
+  async suspend(@Req() req: any, @Param('id') id: string) {
+    await requireAdmin(req);
     return this.adminService.setSuspended(Number(id), true);
   }
 
   @Post('users/:id/unsuspend')
-  unsuspend(@Param('id') id: string) {
+  async unsuspend(@Req() req: any, @Param('id') id: string) {
+    await requireAdmin(req);
     return this.adminService.setSuspended(Number(id), false);
   }
 
   @Post('users/:id/role')
-  setRole(@Param('id') id: string, @Body() body: { role: string }) {
+  async setRole(@Req() req: any, @Param('id') id: string, @Body() body: { role: string }) {
+    await requireAdmin(req);
     return this.adminService.setRole(Number(id), body.role);
   }
 
   @Post('users/:id/password')
-  setPassword(@Param('id') id: string, @Body() body: { password: string }) {
+  async setPassword(@Req() req: any, @Param('id') id: string, @Body() body: { password: string }) {
+    await requireAdmin(req);
     return this.adminService.setPassword(Number(id), body.password);
   }
 
   @Post('users/:id/verify')
-  verify(@Param('id') id: string) {
+  async verify(@Req() req: any, @Param('id') id: string) {
+    await requireAdmin(req);
     return this.adminService.verifyUser(Number(id));
   }
 
   @Post('users/:id/wallet')
-  wallet(@Param('id') id: string, @Body() body: { amount: number; title?: string }) {
+  async wallet(@Req() req: any, @Param('id') id: string, @Body() body: { amount: number; title?: string }) {
+    await requireAdmin(req);
     return this.adminService.adjustWallet(Number(id), Number(body.amount), body.title);
   }
 
   @Get('tickets')
-  tickets(@Query('status') status?: string) {
+  async tickets(@Req() req: any, @Query('status') status?: string) {
+    await requireAdmin(req);
     return this.adminService.listTickets(status || '');
   }
 
   @Get('tickets/:id')
-  ticket(@Param('id') id: string) {
+  async ticket(@Req() req: any, @Param('id') id: string) {
+    await requireAdmin(req);
     return this.adminService.getTicket(Number(id));
   }
 
   @Post('tickets/:id/close')
-  close(@Param('id') id: string) {
+  async close(@Req() req: any, @Param('id') id: string) {
+    await requireAdmin(req);
     return this.adminService.closeTicket(Number(id));
   }
 
   @Post('tickets/:id/reply')
-  reply(@Param('id') id: string, @Body() body: { text: string }) {
+  async reply(@Req() req: any, @Param('id') id: string, @Body() body: { text: string }) {
+    await requireAdmin(req);
     return this.adminService.replyTicket(Number(id), body.text);
   }
 
   @Get('exchanges')
-  exchanges(@Query('status') status?: string) {
+  async exchanges(@Req() req: any, @Query('status') status?: string) {
+    await requireAdmin(req);
     return this.adminService.listExchanges(status || '');
   }
 
   @Post('exchanges/:id/cancel')
-  cancelOffer(@Param('id') id: string) {
+  async cancelOffer(@Req() req: any, @Param('id') id: string) {
+    await requireAdmin(req);
     return this.adminService.cancelExchange(Number(id));
   }
 }
