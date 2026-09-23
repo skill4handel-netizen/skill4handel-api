@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Header, Post, Query, Req } from '@nestjs
 import { AuthService } from './auth.service';
 import { NotifyService } from '../notify/notify.service';
 import { userIdFromRequest } from './http-user';
+import { enforceThrottle } from './throttle';
 
 @Controller('auth')
 export class AuthController {
@@ -16,7 +17,8 @@ export class AuthController {
   }
 
   @Post('signup')
-  signup(@Body() body: any) {
+  signup(@Req() req: any, @Body() body: any) {
+    enforceThrottle(req, 'signup', 5, 15 * 60 * 1000);
     return this.authService.signup(
       body.name,
       body.email,
@@ -28,12 +30,14 @@ export class AuthController {
   }
 
   @Post('login')
-  login(@Body() body: any) {
+  login(@Req() req: any, @Body() body: any) {
+    enforceThrottle(req, 'login', 8, 15 * 60 * 1000);
     return this.authService.login(body.email, body.password);
   }
 
   @Post('google')
-  google(@Body() body: any) {
+  google(@Req() req: any, @Body() body: any) {
+    enforceThrottle(req, 'google', 8, 15 * 60 * 1000);
     return this.authService.googleLogin(body.idToken);
   }
 
@@ -86,7 +90,8 @@ export class AuthController {
   }
 
   @Post('forgot-password')
-  forgot(@Body() body: any) {
+  forgot(@Req() req: any, @Body() body: any) {
+    enforceThrottle(req, 'forgot', 5, 15 * 60 * 1000);
     return this.authService.forgotPassword(body.email);
   }
 

@@ -1,5 +1,6 @@
-import { Body, Controller, Delete, Get, Header, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, Param, Post, Query, Req } from '@nestjs/common';
 import { AdminService } from './admin.service';
+import { enforceThrottle } from '../auth/throttle';
 
 @Controller('admin')
 export class AdminController {
@@ -393,7 +394,8 @@ if (token()) {
   }
 
   @Post('login')
-  login(@Body() body: { email: string; password: string }) {
+  login(@Req() req: any, @Body() body: { email: string; password: string }) {
+    enforceThrottle(req, 'admin-login', 8, 15 * 60 * 1000);
     return this.adminService.login(body.email, body.password);
   }
 
