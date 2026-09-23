@@ -1,8 +1,10 @@
 import { NestFactory } from '@nestjs/core';
+import { json } from 'express';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  app.use(json({ limit: '800kb' }));
   app.enableCors({
     origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
       if (!origin) return callback(null, true);

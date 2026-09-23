@@ -312,9 +312,16 @@ export class AuthService {
   }
 
   async setPhoto(id: number, photoUrl: string) {
+    const value = String(photoUrl || '').trim();
+    if (value && value.length > 350000) {
+      throw new BadRequestException('Photo is too large. Please choose a smaller image.');
+    }
+    if (value && !(value.startsWith('http') || value.startsWith('data:image/'))) {
+      throw new BadRequestException('Invalid photo.');
+    }
     const result = await db.query(
       'UPDATE users SET photo_url = $1, updated_at = NOW() WHERE id = $2 RETURNING *',
-      [photoUrl, id],
+      [value, id],
     );
     const user = result.rows[0];
     if (!user) throw new UnauthorizedException('User not found');
