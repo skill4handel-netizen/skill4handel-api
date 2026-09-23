@@ -10,6 +10,8 @@ const PUBLIC = new Set([
   'POST /auth/verify',
   'POST /auth/resend-verify',
   'POST /auth/forgot-password',
+  'GET /auth/reset',
+  'POST /auth/reset',
   'GET /admin',
   'POST /admin/login',
 ]);

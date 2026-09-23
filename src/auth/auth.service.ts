@@ -1,13 +1,45 @@
 import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
-import { createHash } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
+import * as bcrypt from 'bcryptjs';
 import { db } from '../db';
 import { signToken } from './token';
-import { sendVerifyEmail } from '../mail';
+import { sendResetEmail, sendVerifyEmail } from '../mail';
 
 @Injectable()
 export class AuthService {
-  private hash(password: string) {
+  private sha256(password: string) {
     return createHash('sha256').update(password).digest('hex');
+  }
+
+  private async hash(password: string) {
+    return bcrypt.hash(password, 10);
+  }
+
+  private async passwordMatches(password: string, stored: string) {
+    if (!stored) return false;
+    if (stored.startsWith('$2')) return bcrypt.compare(password, stored);
+    return stored === this.sha256(password);
+  }
+
+  private async upgradeHash(userId: number, password: string, stored: string) {
+    if (stored.startsWith('$2')) return;
+    await db.query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [
+      await this.hash(password),
+      userId,
+    ]);
+  }
+
+  private async ensureResetTable() {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS password_resets (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        token TEXT NOT NULL UNIQUE,
+        used BOOLEAN DEFAULT FALSE,
+        expires_at TIMESTAMPTZ NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
   }
 
   private publicUser(user: any, reviews: any[] = [], history: any[] = []) {
@@ -75,7 +107,7 @@ export class AuthService {
       `INSERT INTO users (name, email, password_hash, balance, age, city, terms_accepted_at)
        VALUES ($1, $2, $3, 1, $4, $5, NOW())
        RETURNING *`,
-      [name, cleanEmail, this.hash(password), Number(age), (city || '').trim()],
+      [name, cleanEmail, await this.hash(password), Number(age), (city || '').trim()],
     );
     const user = created.rows[0];
     await db.query(
@@ -126,11 +158,12 @@ export class AuthService {
     const cleanEmail = email.trim().toLowerCase();
     const result = await db.query('SELECT * FROM users WHERE email = $1', [cleanEmail]);
     const user = result.rows[0];
-    if (!user || user.password_hash !== this.hash(password)) {
+    if (!user || !(await this.passwordMatches(password, user.password_hash))) {
       throw new UnauthorizedException('Email or password is wrong');
     }
     if (user.is_suspended) throw new UnauthorizedException('Account suspended');
     if (!user.email_verified) throw new UnauthorizedException('Email not verified');
+    await this.upgradeHash(user.id, password, user.password_hash);
     await db.query('UPDATE users SET last_login = NOW(), updated_at = NOW() WHERE id = $1', [user.id]);
     return {
       token: signToken(user.id),
@@ -156,7 +189,7 @@ export class AuthService {
         `INSERT INTO users (name, email, password_hash, balance, age, city, email_verified, terms_accepted_at, photo_url)
          VALUES ($1, $2, $3, 1, 18, '', TRUE, NOW(), $4)
          RETURNING *`,
-        [payload.name || cleanEmail.split('@')[0], cleanEmail, this.hash('google-' + Date.now()), payload.picture || ''],
+        [payload.name || cleanEmail.split('@')[0], cleanEmail, await this.hash('google-' + Date.now()), payload.picture || ''],
       );
       user = created.rows[0];
       await db.query(
@@ -197,13 +230,40 @@ export class AuthService {
     };
   }
 
-  async forgotPassword(email: string, password: string) {
-    const cleanEmail = email.trim().toLowerCase();
-    const result = await db.query(
-      'UPDATE users SET password_hash = $1, updated_at = NOW() WHERE email = $2 RETURNING id',
-      [this.hash(password), cleanEmail],
+  async forgotPassword(email: string) {
+    const cleanEmail = (email || '').trim().toLowerCase();
+    if (!cleanEmail) return { ok: true };
+    await this.ensureResetTable();
+    const found = await db.query('SELECT id FROM users WHERE email = $1', [cleanEmail]);
+    const user = found.rows[0];
+    if (!user) return { ok: true };
+    const token = randomBytes(24).toString('hex');
+    await db.query(
+      `INSERT INTO password_resets (user_id, token, expires_at)
+       VALUES ($1, $2, NOW() + INTERVAL '2 hours')`,
+      [user.id, token],
     );
-    if (!result.rows[0]) throw new UnauthorizedException('No account found with this email');
+    await sendResetEmail(cleanEmail, token);
+    return { ok: true };
+  }
+
+  async resetPassword(token: string, password: string) {
+    if (!token || !password || String(password).length < 6) {
+      throw new BadRequestException('The new password must have at least 6 characters.');
+    }
+    await this.ensureResetTable();
+    const found = await db.query(
+      `SELECT * FROM password_resets
+       WHERE token = $1 AND used = FALSE AND expires_at > NOW()`,
+      [token],
+    );
+    const row = found.rows[0];
+    if (!row) throw new UnauthorizedException('This reset link is invalid or has expired.');
+    await db.query('UPDATE password_resets SET used = TRUE WHERE id = $1', [row.id]);
+    await db.query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [
+      await this.hash(password),
+      row.user_id,
+    ]);
     return { ok: true };
   }
 
@@ -214,11 +274,11 @@ export class AuthService {
     const result = await db.query('SELECT id, password_hash FROM users WHERE id = $1', [userId]);
     const user = result.rows[0];
     if (!user) throw new BadRequestException('Account not found');
-    if (user.password_hash !== this.hash(currentPassword)) {
+    if (!(await this.passwordMatches(currentPassword, user.password_hash))) {
       throw new BadRequestException('The current password is incorrect.');
     }
     await db.query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [
-      this.hash(newPassword),
+      await this.hash(newPassword),
       userId,
     ]);
     return { ok: true };

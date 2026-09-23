@@ -87,7 +87,42 @@ export class AuthController {
 
   @Post('forgot-password')
   forgot(@Body() body: any) {
-    return this.authService.forgotPassword(body.email, body.password);
+    return this.authService.forgotPassword(body.email);
+  }
+
+  @Get('reset')
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  resetForm(@Query('token') token: string) {
+    const safe = encodeURIComponent(token || '');
+    return `<!doctype html><html><body style="font-family:sans-serif;padding:32px;max-width:420px;margin:auto">
+      <h2>Skill4Handel</h2>
+      <p>Choose a new password. This link expires in two hours and can be used once.</p>
+      <p><input id="password" type="password" placeholder="New password" minlength="6" style="width:100%;padding:10px"></p>
+      <p><button id="go" style="padding:10px 16px">Update password</button></p>
+      <p id="msg"></p>
+      <script>
+        document.getElementById('go').onclick = async function() {
+          const password = document.getElementById('password').value;
+          const res = await fetch('/auth/reset', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ token: decodeURIComponent('${safe}'), password })
+          });
+          document.getElementById('msg').textContent = res.ok
+            ? 'Password updated. Open the app and log in.'
+            : 'This link is invalid or has expired.';
+        };
+      </script>
+    </body></html>`;
+  }
+
+  @Post('reset')
+  async reset(@Body() body: any) {
+    await this.authService.resetPassword(body.token, body.password);
+    return `<!doctype html><html><body style="font-family:sans-serif;padding:32px;text-align:center">
+      <h2>Skill4Handel</h2>
+      <p>Your password has been updated. Open the app and log in.</p>
+    </body></html>`;
   }
 
   @Post('change-password')
