@@ -138,6 +138,46 @@ export class AuthService {
     };
   }
 
+
+  async googleLogin(idToken: string) {
+    if (!idToken) throw new UnauthorizedException('Google sign-in failed');
+    const res = await fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken));
+    if (!res.ok) throw new UnauthorizedException('Google token is invalid');
+    const payload = await res.json() as { email?: string; email_verified?: string; name?: string; picture?: string };
+    const cleanEmail = String(payload.email || '').trim().toLowerCase();
+    if (!cleanEmail) throw new UnauthorizedException('Google account has no email');
+    if (payload.email_verified !== 'true' && payload.email_verified !== true as any) {
+      throw new UnauthorizedException('Google email is not verified');
+    }
+    let found = await db.query('SELECT * FROM users WHERE email = $1', [cleanEmail]);
+    let user = found.rows[0];
+    if (!user) {
+      const created = await db.query(
+        `INSERT INTO users (name, email, password_hash, balance, age, city, email_verified, terms_accepted_at, photo_url)
+         VALUES ($1, $2, $3, 1, 18, '', TRUE, NOW(), $4)
+         RETURNING *`,
+        [payload.name || cleanEmail.split('@')[0], cleanEmail, this.hash('google-' + Date.now()), payload.picture || ''],
+      );
+      user = created.rows[0];
+      await db.query(
+        `INSERT INTO wallet_transactions (user_id, type, amount, title)
+         VALUES ($1, 'BONUS', 1, 'Starter bonus')`,
+        [user.id],
+      );
+    } else {
+      if (user.is_suspended) throw new UnauthorizedException('Account suspended');
+      await db.query(
+        'UPDATE users SET email_verified = TRUE, last_login = NOW(), updated_at = NOW() WHERE id = $1',
+        [user.id],
+      );
+      user.email_verified = true;
+    }
+    return {
+      token: signToken(user.id),
+      user: this.publicUser(user, await this.reviewsOf(user.id), await this.historyOf(user.id)),
+    };
+  }
+
   async verifyEmail(token: string) {
     const result = await db.query(
       'SELECT * FROM email_verifications WHERE token = $1',

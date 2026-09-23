@@ -31,6 +31,11 @@ export class AuthController {
     return this.authService.login(body.email, body.password);
   }
 
+  @Post('google')
+  google(@Body() body: any) {
+    return this.authService.googleLogin(body.idToken);
+  }
+
   @Get('verify')
   @Header('Content-Type', 'text/html; charset=utf-8')
   async verifyLink(@Query('token') token: string) {
