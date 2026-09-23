@@ -1,22 +1,39 @@
 import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { createHash } from 'crypto';
+import * as bcrypt from 'bcryptjs';
 import { db } from '../db';
 import { signToken } from '../auth/token';
 
 @Injectable()
 export class AdminService {
-  private hash(password: string) {
+  private sha256(password: string) {
     return createHash('sha256').update(password).digest('hex');
+  }
+
+  private async hash(password: string) {
+    return bcrypt.hash(password, 10);
+  }
+
+  private async passwordMatches(password: string, stored: string) {
+    if (!stored) return false;
+    if (stored.startsWith('$2')) return bcrypt.compare(password, stored);
+    return stored === this.sha256(password);
   }
 
   async login(email: string, password: string) {
     const result = await db.query('SELECT * FROM users WHERE email = $1', [email.trim().toLowerCase()]);
     const user = result.rows[0];
-    if (!user || user.password_hash !== this.hash(password)) {
+    if (!user || !(await this.passwordMatches(password, user.password_hash))) {
       throw new UnauthorizedException('Wrong email or password');
     }
     if (user.role !== 'admin') {
       throw new UnauthorizedException('Not an admin');
+    }
+    if (!user.password_hash.startsWith('$2')) {
+      await db.query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [
+        await this.hash(password),
+        user.id,
+      ]);
     }
     return {
       token: signToken(user.id),
@@ -175,7 +192,10 @@ export class AdminService {
 
   async setPassword(id: number, password: string) {
     if (!password || password.length < 4) throw new UnauthorizedException('Password too short');
-    await db.query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [this.hash(password), id]);
+    await db.query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [
+      await this.hash(password),
+      id,
+    ]);
     return { ok: true };
   }
 
