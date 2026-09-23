@@ -147,7 +147,7 @@ export class ChatService {
 
   private async pack(chat: any) {
     const messages = await db.query(
-      'SELECT from_id, type, text FROM messages WHERE chat_id = $1 ORDER BY id',
+      'SELECT from_id, type, text, created_at FROM messages WHERE chat_id = $1 ORDER BY id',
       [chat.id],
     );
     const offer = await this.latestOffer(chat.id);
@@ -167,6 +167,7 @@ export class ChatService {
         type: row.type,
         fromId: row.from_id,
         text: row.text,
+        createdAt: row.created_at,
       })),
     };
   }
