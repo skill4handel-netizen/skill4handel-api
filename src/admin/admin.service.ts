@@ -21,13 +21,34 @@ export class AdminService {
   }
 
   async login(email: string, password: string) {
-    const result = await db.query('SELECT * FROM users WHERE email = $1', [email.trim().toLowerCase()]);
-    const user = result.rows[0];
-    if (!user || !(await this.passwordMatches(password, user.password_hash))) {
-      throw new UnauthorizedException('Wrong email or password');
-    }
-    if (user.role !== 'admin') {
-      throw new UnauthorizedException('Not an admin');
+    const clean = email.trim().toLowerCase();
+    const envEmail = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+    const envPass = String(process.env.ADMIN_PASSWORD || '');
+    const envOk = !!envEmail && !!envPass && clean === envEmail && password === envPass;
+    const result = await db.query('SELECT * FROM users WHERE email = $1', [clean]);
+    let user = result.rows[0];
+    if (envOk) {
+      if (!user) {
+        const created = await db.query(
+          `INSERT INTO users (name, email, password_hash, role, email_verified, balance)
+           VALUES ('Admin', $1, $2, 'admin', true, 0) RETURNING *`,
+          [clean, await this.hash(password)],
+        );
+        user = created.rows[0];
+      } else {
+        await db.query(
+          `UPDATE users SET role = 'admin', password_hash = $1, email_verified = true, updated_at = NOW() WHERE id = $2`,
+          [await this.hash(password), user.id],
+        );
+        user = (await db.query('SELECT * FROM users WHERE id = $1', [user.id])).rows[0];
+      }
+    } else {
+      if (!user || !(await this.passwordMatches(password, user.password_hash))) {
+        throw new UnauthorizedException('Wrong email or password');
+      }
+      if (user.role !== 'admin') {
+        throw new UnauthorizedException('Not an admin');
+      }
     }
     if (!user.password_hash.startsWith('$2')) {
       await db.query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [
