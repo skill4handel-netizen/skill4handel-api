@@ -62,6 +62,31 @@ export class AdminService {
     };
   }
 
+  async recoverFromEnv(email: string) {
+    const clean = String(email || '').trim().toLowerCase();
+    const envEmail = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+    const envPass = String(process.env.ADMIN_PASSWORD || '');
+    if (!clean || !envEmail || !envPass || clean !== envEmail) {
+      return { ok: true, reset: false };
+    }
+    const result = await db.query('SELECT * FROM users WHERE email = $1', [clean]);
+    let user = result.rows[0];
+    const hash = await this.hash(envPass);
+    if (!user) {
+      await db.query(
+        `INSERT INTO users (name, email, password_hash, role, email_verified, balance)
+         VALUES ('Admin', $1, $2, 'admin', true, 0)`,
+        [clean, hash],
+      );
+    } else {
+      await db.query(
+        `UPDATE users SET role = 'admin', password_hash = $1, email_verified = true, updated_at = NOW() WHERE id = $2`,
+        [hash, user.id],
+      );
+    }
+    return { ok: true, reset: true };
+  }
+
   async stats() {
     const users = await db.query(`
       SELECT

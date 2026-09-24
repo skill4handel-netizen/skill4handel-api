@@ -187,14 +187,23 @@ async function forgot() {
     $("error").textContent = "Enter the admin email first.";
     return;
   }
-  $("error").textContent = "Sending reset email...";
+  $("error").textContent = "Resetting...";
   try {
+    const rec = await fetch(api + "/admin/recover", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: email })
+    }).then(function(r) { return r.json(); });
+    if (rec && rec.reset) {
+      $("error").textContent = "Password was reset to ADMIN_PASSWORD from the server. Sign in with that password.";
+      return;
+    }
     await fetch(api + "/auth/forgot-password", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: email })
     });
-    $("error").textContent = "If this email exists, a reset message was sent.";
+    $("error").textContent = "No server admin match. A reset email is sent only if mail is configured.";
   } catch (err) {
     $("error").textContent = "Could not reach the server.";
   }
@@ -480,6 +489,12 @@ if (token()) {
   login(@Req() req: any, @Body() body: { email: string; password: string }) {
     enforceThrottle(req, 'admin-login', 8, 15 * 60 * 1000);
     return this.adminService.login(body.email, body.password);
+  }
+
+  @Post('recover')
+  recover(@Req() req: any, @Body() body: { email?: string }) {
+    enforceThrottle(req, 'admin-recover', 6, 15 * 60 * 1000);
+    return this.adminService.recoverFromEnv(String(body?.email || ''));
   }
 
   @Get('stats')
