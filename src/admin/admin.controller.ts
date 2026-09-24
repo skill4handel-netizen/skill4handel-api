@@ -43,12 +43,15 @@ export class AdminController {
   .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; }
   .stat { background:#f7f9fc; border-radius:10px; padding:12px; }
   .stat b { display:block; font-size:22px; color:var(--navy); }
-  .charts { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:16px; }
-  .bar-row { display:flex; align-items:center; gap:8px; margin:6px 0; font-size:13px; }
-  .bar-row span.label { width:110px; color:#5b6b7c; }
-  .bar-row span.val { width:36px; text-align:right; font-weight:700; }
-  .bar { height:12px; background:#d9e2ef; border-radius:99px; flex:1; overflow:hidden; }
-  .bar i { display:block; height:100%; background:var(--blue); }
+  .charts { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; }
+  .chart-box h3 { margin:0 0 8px; font-size:13px; color:var(--navy); }
+  .vchart { display:flex; align-items:flex-end; gap:6px; height:120px; padding-top:6px; }
+  .vcol { flex:1; display:flex; flex-direction:column; align-items:center; height:100%; justify-content:flex-end; }
+  .vbar { width:100%; max-width:28px; background:var(--blue); border-radius:6px 6px 0 0; min-height:4px; }
+  .vcol .val { font-size:11px; font-weight:700; margin-bottom:4px; }
+  .vcol .label { font-size:10px; color:#5b6b7c; margin-top:4px; text-align:center; line-height:1.2; word-break:break-word; }
+  .logo { width:40px; height:40px; object-fit:contain; border-radius:8px; background:#fff; }
+  header .brand-row { display:flex; align-items:center; gap:10px; }
   table { width:100%; border-collapse:collapse; font-size:14px; }
   th, td { border-bottom:1px solid #eee; padding:8px; text-align:left; vertical-align:top; }
   .hide { display:none; }
@@ -63,7 +66,7 @@ export class AdminController {
 <div id="login" class="login-wrap">
   <div class="login-card">
     <div class="brand">
-      <div class="mark">S4H</div>
+      <img class="logo" src="https://www.skill4handel.com/logo.jpg" alt="Skill4Handel" style="width:72px;height:72px;margin:0 auto 10px;display:block;border-radius:16px;object-fit:contain;background:#fff" />
       <h1>Skill4Handel Admin</h1>
       <p>Support, members and exchanges</p>
     </div>
@@ -82,7 +85,10 @@ export class AdminController {
 </div>
 <div id="app" class="hide">
   <header>
-    <h1 style="margin:0;font-size:20px">Skill4Handel Admin</h1>
+    <div class="brand-row">
+      <img class="logo" src="https://www.skill4handel.com/logo.jpg" alt="Skill4Handel" />
+      <h1 style="margin:0;font-size:20px">Skill4Handel Admin</h1>
+    </div>
     <div>
       <button id="refreshBtn" type="button">Refresh</button>
       <button id="logoutBtn" type="button">Logout</button>
@@ -90,7 +96,7 @@ export class AdminController {
   </header>
   <main>
     <div class="card grid" id="stats"></div>
-    <div class="card" id="charts"></div>
+    <div class="card charts" id="charts"></div>
     <div class="card tabs">
       <button type="button" data-tab="tickets" class="on">Tickets</button>
       <button type="button" data-tab="users">Users</button>
@@ -225,14 +231,15 @@ async function loadStats() {
     chartBox("Tickets by type", charts.tickets || [], "type", "count");
 }
 function chartBox(title, rows, labelKey, valueKey) {
-  if (!rows.length) return "<div><h3>" + title + "</h3><p>No data yet</p></div>";
+  if (!rows.length) return "<div class=chart-box><h3>" + title + "</h3><p>No data yet</p></div>";
   const max = Math.max.apply(null, rows.map(function(r) { return Number(r[valueKey] || 0); })) || 1;
-  return "<div><h3>" + title + "</h3>" + rows.map(function(r) {
+  return "<div class=chart-box><h3>" + title + "</h3><div class=vchart>" + rows.map(function(r) {
     const n = Number(r[valueKey] || 0);
-    const w = Math.round(n * 100 / max);
-    return "<div class=bar-row><span class=label>" + String(r[labelKey] || "") +
-      "</span><div class=bar><i style=width:" + w + "%></i></div><span class=val>" + n + "</span></div>";
-  }).join("") + "</div>";
+    const h = Math.max(6, Math.round(n * 90 / max));
+    const label = String(r[labelKey] || "").replace(/^20/, "");
+    return "<div class=vcol><span class=val>" + n + "</span><div class=vbar style=height:" + h +
+      "px></div><span class=label>" + label + "</span></div>";
+  }).join("") + "</div></div>";
 }
 function stat(label, value) {
   return "<div class=stat><b>" + (value == null ? "-" : value) + "</b>" + label + "</div>";
