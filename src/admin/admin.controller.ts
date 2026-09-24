@@ -386,19 +386,26 @@ async function openUser(id) {
     "<p>Account created: " + formatTime(u.created_at) + "<br>Last login: " + formatTime(u.last_login || u.updated_at) + "</p>" +
     "<p>Skills offered: " + (u.offers || "-") + "</p>" +
     "<h3>Registration fields</h3>" +
-    "<label>Name</label><input id=editName value=\"" + String(u.name||"").replace(/"/g,"") + "\" />" +
-    "<label>Email</label><input id=editEmail value=\"" + String(u.email||"").replace(/"/g,"") + "\" />" +
-    "<label>City</label><input id=editCity value=\"" + String(u.city||"").replace(/"/g,"") + "\" />" +
-    "<label>Language</label><select id=editLang><option value=en" + (u.language==="nl"?"":" selected") + ">English</option><option value=nl" + (u.language==="nl"?" selected":"") + ">Nederlands</option></select>" +
-    "<label>Age</label><input id=editAge type=number value=\"" + (u.age==null?"":u.age) + "\" />" +
-    "<label>Date of birth</label><input id=editBirth type=date value=\"" + String(u.birth_date||"").slice(0,10) + "\" />" +
-    "<label>New password (optional)</label><input id=editPass type=password />" +
-    "<p><button type=button id=saveUserBtn data-save-user=" + u.id + ">Save registration fields</button></p>" +
+    "<label>Name</label><input id=editName />" +
+    "<label>Email</label><input id=editEmail />" +
+    "<label>City</label><input id=editCity />" +
+    "<label>Language</label><select id=editLang><option value=en>English</option><option value=nl>Nederlands</option></select>" +
+    "<label>Age</label><input id=editAge type=number />" +
+    "<label>Date of birth</label><input id=editBirth type=date />" +
+    "<label>New password optional</label><input id=editPass type=password />" +
+    "<p><button type=button id=saveUserBtn>Save registration fields</button></p>" +
     "<h3>Recent chats</h3>" + table(a.chats || [], ["id","name_a","name_b","last_message","updated_at"]) +
     "<h3>Offers</h3>" + table(a.offers || [], ["id","status","skill_requested","skill_offered","extra_tokens","updated_at"]) +
     "<h3>Tickets</h3>" + table(a.tickets || [], ["id","type","status","created_at"]) +
     "<h3>Reviews</h3>" + table(a.reviews || [], ["id","rating","text","created_at"]) +
     "<h3>Wallet</h3>" + table(a.wallet || [], ["id","type","amount","title","created_at"]);
+  if ($("editName")) $("editName").value = u.name || "";
+  if ($("editEmail")) $("editEmail").value = u.email || "";
+  if ($("editCity")) $("editCity").value = u.city || "";
+  if ($("editLang")) $("editLang").value = u.language === "nl" ? "nl" : "en";
+  if ($("editAge")) $("editAge").value = u.age == null ? "" : u.age;
+  if ($("editBirth")) $("editBirth").value = String(u.birth_date || "").slice(0,10);
+  if ($("saveUserBtn")) $("saveUserBtn").setAttribute("data-save-user", String(u.id));
 }
 async function act(url, method, body) {
   const res = await fetch(api + url, {
