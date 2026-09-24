@@ -10,9 +10,70 @@ export class ChatService {
     return Number(chat.user_a_id) === Number(userId) ? Number(chat.user_b_id) : Number(chat.user_a_id);
   }
 
+  private async langOf(userId: number) {
+    try {
+      const row = await db.query('SELECT language FROM users WHERE id = $1', [userId]);
+      return row.rows[0]?.language === 'nl' ? 'nl' : 'en';
+    } catch (_) {
+      return 'en';
+    }
+  }
+
+  private localize(lang: string, title: string, body: string) {
+    const table: Record<string, [string, string]> = {
+      'New message': ['New message', 'Nieuw bericht'],
+      'Offer closed': ['Offer closed', 'Aanbod gesloten'],
+      'Offer cancelled': ['Offer cancelled', 'Aanbod geannuleerd'],
+      'New offer received': ['New offer received', 'Nieuw aanbod ontvangen'],
+      'Counter-offer received': ['Counter-offer received', 'Tegenaanbod ontvangen'],
+      'Offer accepted': ['Offer accepted', 'Aanbod geaccepteerd'],
+      'Offer declined': ['Offer declined', 'Aanbod afgewezen'],
+      'Exchange completed': ['Exchange completed', 'Uitwisseling afgerond'],
+      'Completion confirmed': ['Completion confirmed', 'Afronding bevestigd'],
+      'An offer expired because the scheduled time passed.': [
+        'An offer expired because the scheduled time passed.',
+        'Een aanbod is verlopen omdat de geplande tijd voorbij is.',
+      ],
+      'An offer was cancelled because there was no response within 24 hours.': [
+        'An offer was cancelled because there was no response within 24 hours.',
+        'Een aanbod is geannuleerd omdat er binnen 24 uur geen reactie kwam.',
+      ],
+      'A counter-offer is waiting for your response.': [
+        'A counter-offer is waiting for your response.',
+        'Er wacht een tegenaanbod op uw reactie.',
+      ],
+      'A skill exchange offer is waiting for your response.': [
+        'A skill exchange offer is waiting for your response.',
+        'Er wacht een aanbod voor vaardighedenruil op uw reactie.',
+      ],
+      'Your offer has been accepted.': ['Your offer has been accepted.', 'Uw aanbod is geaccepteerd.'],
+      'Your offer has been declined.': ['Your offer has been declined.', 'Uw aanbod is afgewezen.'],
+      'An offer was cancelled. A new request may be started.': [
+        'An offer was cancelled. A new request may be started.',
+        'Een aanbod is geannuleerd. Er kan een nieuw verzoek worden gestart.',
+      ],
+      'The exchange is complete. Please leave a review.': [
+        'The exchange is complete. Please leave a review.',
+        'De uitwisseling is afgerond. Laat alstublieft een beoordeling achter.',
+      ],
+      'The other member has marked the exchange as complete.': [
+        'The other member has marked the exchange as complete.',
+        'De andere deelnemer heeft de uitwisseling als afgerond gemarkeerd.',
+      ],
+    };
+    const t = table[title];
+    const b = table[body];
+    return {
+      title: t ? (lang === 'nl' ? t[1] : t[0]) : title,
+      body: b ? (lang === 'nl' ? b[1] : b[0]) : body,
+    };
+  }
+
   private async ping(userId: number, title: string, body: string, data: Record<string, string> = {}) {
     try {
-      await this.notify.sendToUser(userId, title, body, data);
+      const lang = await this.langOf(userId);
+      const loc = this.localize(lang, title, body);
+      await this.notify.sendToUser(userId, loc.title, loc.body, data);
     } catch (error) {
       console.log('NOTIFY SKIP', error);
     }

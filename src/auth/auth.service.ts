@@ -292,19 +292,22 @@ export class AuthService {
     needs: string;
     gender?: string;
     age?: number;
+    language?: string;
   }) {
     const age = Number(body.age || 0);
     if (age > 0 && age < 18) {
       throw new BadRequestException('Skill4Handel is only for users 18 and older');
     }
+    const language = body.language === 'nl' ? 'nl' : 'en';
+    await db.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS language VARCHAR(8) DEFAULT 'en'");
     const result = await db.query(
       `UPDATE users
        SET name = $1,
            city = CASE WHEN COALESCE(city, '') = '' THEN $2 ELSE city END,
-           offers = $3, needs = $4, gender = $5, age = $6, updated_at = NOW()
-       WHERE id = $7
+           offers = $3, needs = $4, gender = $5, age = $6, language = $7, updated_at = NOW()
+       WHERE id = $8
        RETURNING *`,
-      [body.name, body.city, body.offers, body.needs, body.gender || '', age || null, body.id],
+      [body.name, body.city, body.offers, body.needs, body.gender || '', age || null, language, body.id],
     );
     const user = result.rows[0];
     if (!user) throw new UnauthorizedException('User not found');
