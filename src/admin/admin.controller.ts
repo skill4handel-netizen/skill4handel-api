@@ -487,7 +487,7 @@ if (token()) {
 
   @Post('login')
   login(@Req() req: any, @Body() body: { email: string; password: string }) {
-    enforceThrottle(req, 'admin-login', 8, 15 * 60 * 1000);
+    enforceThrottle(req, 'admin-login', 30, 10 * 60 * 1000);
     return this.adminService.login(body.email, body.password);
   }
 

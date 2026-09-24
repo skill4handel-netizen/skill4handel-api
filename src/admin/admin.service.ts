@@ -43,6 +43,9 @@ export class AdminService {
         user = (await db.query('SELECT * FROM users WHERE id = $1', [user.id])).rows[0];
       }
     } else {
+      if (envEmail && clean === envEmail) {
+        throw new UnauthorizedException('This is the server admin email. Use the exact ADMIN_PASSWORD from Render Environment.');
+      }
       if (!user || !(await this.passwordMatches(password, user.password_hash))) {
         throw new UnauthorizedException('Wrong email or password');
       }
