@@ -76,7 +76,7 @@ export class AdminController {
       <label>Password</label>
       <input id="password" type="password" autocomplete="current-password" placeholder="Password" />
       <div class="row-btns">
-        <button id="loginBtn" class="primary" type="submit">Sign in</button>
+        <button id="loginBtn" class="primary" type="button">Sign in</button>
         <button id="forgotBtn" class="ghost" type="button">Forgot password</button>
       </div>
       <p id="error" class="error"></p>
@@ -402,9 +402,16 @@ async function act(url, method, body) {
   }
   return data;
 }
+document.addEventListener("submit", function(event) {
+  if (event.target && event.target.id === "loginForm") {
+    event.preventDefault();
+    login();
+  }
+});
 document.addEventListener("click", async function(event) {
   const t = event.target;
   if (!t || !t.getAttribute) return;
+  if (t.id === "loginBtn") return login();
   if (t.id === "forgotBtn") return forgot();
   if (t.id === "logoutBtn") return logout();
   if (t.id === "refreshBtn") return loadAll();
