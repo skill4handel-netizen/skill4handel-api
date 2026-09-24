@@ -171,9 +171,11 @@ async function login() {
     });
     const data = await res.json().catch(function() { return {}; });
     if (!res.ok || !data.token) {
-      if ($("error")) $("error").textContent = data.message || ("Login failed (" + res.status + ")");
+      const msg = data.message || ("Login failed (" + res.status + ")");
+      if ($("error")) $("error").textContent = msg;
       $("login").className = "login-wrap";
       $("app").className = "hide";
+      alert(msg);
       return;
     }
     localStorage.setItem("adminToken", data.token);
@@ -427,7 +429,9 @@ document.addEventListener("submit", function(event) {
   }
 });
 document.addEventListener("click", async function(event) {
-  const t = event.target;
+  const raw = event.target;
+  if (!raw) return;
+  const t = raw.closest ? raw.closest("button, [data-tab], [data-open-user], [data-open-ticket], [data-close-ticket], [data-delete-ticket], [data-save-user], [data-verify], [data-suspend], [data-unsuspend], [data-role-user], [data-role-admin], [data-password], [data-wallet], [data-delete-user], [data-cancel-offer]") : raw;
   if (!t || !t.getAttribute) return;
   if (t.id === "loginBtn") return login();
   if (t.id === "forgotBtn") return forgot();
@@ -499,6 +503,12 @@ $("offerFilter").addEventListener("change", loadExchanges);
 $("loginForm").addEventListener("submit", function(event) {
   event.preventDefault();
   login();
+});
+document.addEventListener("keydown", function(event) {
+  if (event.key === "Enter" && $("login") && $("login").className.indexOf("hide") < 0) {
+    event.preventDefault();
+    login();
+  }
 });
 if (token()) {
   $("login").className = "hide";
