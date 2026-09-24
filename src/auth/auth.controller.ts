@@ -175,6 +175,11 @@ export class AuthController {
     return this.authService.block(userIdFromRequest(req), Number(body.otherId));
   }
 
+  @Delete('account')
+  deleteAccount(@Req() req: any, @Body() body: { password?: string }) {
+    return this.authService.deleteAccount(userIdFromRequest(req), String(body?.password || ''));
+  }
+
   @Post('unblock')
   unblock(@Req() req: any, @Body() body: any) {
     return this.authService.unblock(userIdFromRequest(req), Number(body.otherId));

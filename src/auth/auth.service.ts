@@ -468,4 +468,37 @@ export class AuthService {
     }
     return users;
   }
+
+  async deleteAccount(userId: number, password: string) {
+    if (!userId) throw new UnauthorizedException('Please log in again');
+    const user = (await db.query('SELECT * FROM users WHERE id = $1', [userId])).rows[0];
+    if (!user) throw new UnauthorizedException('User not found');
+    if (user.role === 'admin') {
+      throw new BadRequestException('Admin accounts cannot be deleted from the app');
+    }
+    if (!(await this.passwordMatches(password, user.password_hash))) {
+      throw new UnauthorizedException('Password is wrong');
+    }
+    await db.query('DELETE FROM tickets WHERE user_id = $1', [userId]);
+    await db.query('DELETE FROM reviews WHERE from_id = $1 OR to_id = $1', [userId]);
+    try { await db.query('DELETE FROM wallet_transactions WHERE user_id = $1 OR other_user_id = $1', [userId]); } catch (_) {}
+    try { await db.query('DELETE FROM device_tokens WHERE user_id = $1', [userId]); } catch (_) {}
+    try { await db.query('DELETE FROM blocks WHERE blocker_id = $1 OR blocked_id = $1', [userId]); } catch (_) {}
+    await db.query(
+      `DELETE FROM exchange_offers WHERE chat_id IN (
+         SELECT id FROM chats WHERE user_a_id = $1 OR user_b_id = $1
+       )`,
+      [userId],
+    );
+    await db.query(
+      `DELETE FROM messages WHERE chat_id IN (
+         SELECT id FROM chats WHERE user_a_id = $1 OR user_b_id = $1
+       )`,
+      [userId],
+    );
+    await db.query('DELETE FROM chats WHERE user_a_id = $1 OR user_b_id = $1', [userId]);
+    await db.query('DELETE FROM users WHERE id = $1', [userId]);
+    return { ok: true };
+  }
+
 }
