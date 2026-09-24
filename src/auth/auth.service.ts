@@ -61,7 +61,12 @@ export class AuthService {
       reviews,
       rating,
       emailVerified: !!user.email_verified,
+      accessibility: !!user.accessibility,
     };
+  }
+
+  private privateUser(user: any, reviews: any[] = [], history: any[] = []) {
+    return { ...this.publicUser(user, reviews, history), phone: user.phone || '' };
   }
 
   private async reviewsOf(userId: number) {
@@ -90,24 +95,35 @@ export class AuthService {
     }));
   }
 
+  async publicProfile(userId: number) {
+    const result = await db.query('SELECT * FROM users WHERE id = $1', [userId]);
+    const user = result.rows[0];
+    if (!user) throw new UnauthorizedException('Please log in.');
+    return this.publicUser(user, await this.reviewsOf(user.id), await this.historyOf(user.id));
+  }
+
   async me(userId: number) {
     const result = await db.query('SELECT * FROM users WHERE id = $1', [userId]);
     const user = result.rows[0];
     if (!user) throw new UnauthorizedException('User not found');
-    return this.publicUser(user, await this.reviewsOf(user.id), await this.historyOf(user.id));
+    return this.privateUser(user, await this.reviewsOf(user.id), await this.historyOf(user.id));
   }
 
-  async signup(name: string, email: string, password: string, age?: number, acceptedTerms?: boolean, city?: string) {
+  async signup(name: string, email: string, password: string, age?: number, acceptedTerms?: boolean, city?: string, phone?: string, accessibility?: boolean, birthDate?: string, language?: string) {
     if (!acceptedTerms) throw new BadRequestException('You must accept the terms');
+    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(40)`);
+    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS accessibility BOOLEAN DEFAULT FALSE`);
+    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS language VARCHAR(10)`);
+    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_date DATE`);
     if (Number(age || 0) < 18) throw new BadRequestException('You must be 18 or older');
     const cleanEmail = email.trim().toLowerCase();
     const exists = await db.query('SELECT id FROM users WHERE email = $1', [cleanEmail]);
     if (exists.rows[0]) throw new BadRequestException('This email is already registered');
     const created = await db.query(
-      `INSERT INTO users (name, email, password_hash, balance, age, city, terms_accepted_at)
-       VALUES ($1, $2, $3, 1, $4, $5, NOW())
+      `INSERT INTO users (name, email, password_hash, balance, age, city, terms_accepted_at, phone, accessibility, language, birth_date)
+       VALUES ($1, $2, $3, 1, $4, $5, NOW(), $6, $7, $8, $9)
        RETURNING *`,
-      [name, cleanEmail, await this.hash(password), Number(age), (city || '').trim()],
+      [name, cleanEmail, await this.hash(password), Number(age), (city || '').trim(), (phone || '').trim(), !!accessibility, language === 'nl' ? 'nl' : 'en', birthDate || null],
     );
     const user = created.rows[0];
     await db.query(
@@ -118,7 +134,7 @@ export class AuthService {
     const verifyToken = Math.random().toString(36).slice(2) + Date.now().toString(36);
     await db.query('INSERT INTO email_verifications (user_id, token) VALUES ($1, $2)', [user.id, verifyToken]);
     const verifyUrl = await sendVerifyEmail(cleanEmail, verifyToken);
-    return { token: signToken(user.id), user: this.publicUser(user), verifyUrl };
+    return { token: signToken(user.id), user: this.privateUser(user), verifyUrl };
   }
 
 
@@ -167,7 +183,7 @@ export class AuthService {
     await db.query('UPDATE users SET last_login = NOW(), updated_at = NOW() WHERE id = $1', [user.id]);
     return {
       token: signToken(user.id),
-      user: this.publicUser(user, await this.reviewsOf(user.id), await this.historyOf(user.id)),
+      user: this.privateUser(user, await this.reviewsOf(user.id), await this.historyOf(user.id)),
     };
   }
 
@@ -207,7 +223,7 @@ export class AuthService {
     }
     return {
       token: signToken(user.id),
-      user: this.publicUser(user, await this.reviewsOf(user.id), await this.historyOf(user.id)),
+      user: this.privateUser(user, await this.reviewsOf(user.id), await this.historyOf(user.id)),
     };
   }
 
@@ -226,7 +242,7 @@ export class AuthService {
     return {
       ok: true,
       token: signToken(row.user_id),
-      user: this.publicUser(user, await this.reviewsOf(user.id), await this.historyOf(user.id)),
+      user: this.privateUser(user, await this.reviewsOf(user.id), await this.historyOf(user.id)),
     };
   }
 

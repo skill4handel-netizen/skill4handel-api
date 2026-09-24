@@ -26,6 +26,10 @@ export class AuthController {
       body.age,
       body.acceptedTerms,
       body.city,
+      body.phone,
+      body.accessibility,
+      body.birthDate,
+      body.language,
     );
   }
 

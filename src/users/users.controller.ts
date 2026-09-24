@@ -13,6 +13,6 @@ export class UsersController {
 
   @Get(':id')
   one(@Param('id') id: string) {
-    return this.authService.me(Number(id));
+    return this.authService.publicProfile(Number(id));
   }
 }
