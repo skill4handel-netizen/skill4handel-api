@@ -161,24 +161,30 @@ function showTab(name) {
   });
 }
 async function login() {
-  $("error").textContent = "Signing in...";
+  if ($("error")) $("error").textContent = "Signing in...";
   try {
+    localStorage.removeItem("adminToken");
     const res = await fetch(api + "/admin/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: $("email").value, password: $("password").value })
+      body: JSON.stringify({ email: ($("email").value || "").trim(), password: $("password").value })
     });
     const data = await res.json().catch(function() { return {}; });
-    if (!res.ok) {
-      $("error").textContent = data.message || "Login failed";
+    if (!res.ok || !data.token) {
+      if ($("error")) $("error").textContent = data.message || ("Login failed (" + res.status + ")");
+      $("login").className = "login-wrap";
+      $("app").className = "hide";
       return;
     }
     localStorage.setItem("adminToken", data.token);
     $("login").className = "hide";
     $("app").className = "";
+    if ($("error")) $("error").textContent = "";
     loadAll();
   } catch (err) {
-    $("error").textContent = "Could not reach the server. Wait and try again.";
+    if ($("error")) $("error").textContent = "Could not reach the server. Wait and try again.";
+    $("login").className = "login-wrap";
+    $("app").className = "hide";
   }
 }
 async function forgot() {
@@ -210,13 +216,18 @@ async function forgot() {
 }
 function logout() {
   localStorage.removeItem("adminToken");
-  location.reload();
+  $("app").className = "hide";
+  $("login").className = "login-wrap";
+  if ($("error")) $("error").textContent = "Please sign in again.";
 }
 async function loadAll() {
   try {
     const probe = await fetch(api + "/admin/stats", { headers: headers() });
     if (probe.status === 401 || probe.status === 403) {
-      logout();
+      localStorage.removeItem("adminToken");
+      $("app").className = "hide";
+      $("login").className = "login-wrap";
+      if ($("error")) $("error").textContent = "Signed in, but the admin session was rejected. Check JWT_SECRET and try again.";
       return;
     }
     await Promise.all([loadStats(), loadTickets(), loadUsers(), loadExchanges(), loadReviews()]);
