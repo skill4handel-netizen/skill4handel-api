@@ -43,6 +43,12 @@ export class AdminController {
   .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; }
   .stat { background:#f7f9fc; border-radius:10px; padding:12px; }
   .stat b { display:block; font-size:22px; color:var(--navy); }
+  .charts { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:16px; }
+  .bar-row { display:flex; align-items:center; gap:8px; margin:6px 0; font-size:13px; }
+  .bar-row span.label { width:110px; color:#5b6b7c; }
+  .bar-row span.val { width:36px; text-align:right; font-weight:700; }
+  .bar { height:12px; background:#d9e2ef; border-radius:99px; flex:1; overflow:hidden; }
+  .bar i { display:block; height:100%; background:var(--blue); }
   table { width:100%; border-collapse:collapse; font-size:14px; }
   th, td { border-bottom:1px solid #eee; padding:8px; text-align:left; vertical-align:top; }
   .hide { display:none; }
@@ -84,6 +90,7 @@ export class AdminController {
   </header>
   <main>
     <div class="card grid" id="stats"></div>
+    <div class="card" id="charts"></div>
     <div class="card tabs">
       <button type="button" data-tab="tickets" class="on">Tickets</button>
       <button type="button" data-tab="users">Users</button>
@@ -211,6 +218,21 @@ async function loadStats() {
     stat("Open tickets", s.tickets && s.tickets.open) +
     stat("Pending offers", s.offers && s.offers.pending) +
     stat("Completed offers", s.offers && s.offers.completed);
+  const charts = s.charts || {};
+  $("charts").innerHTML =
+    chartBox("New members, 14 days", charts.signups || [], "day", "count") +
+    chartBox("Offers by status", charts.offers || [], "status", "count") +
+    chartBox("Tickets by type", charts.tickets || [], "type", "count");
+}
+function chartBox(title, rows, labelKey, valueKey) {
+  if (!rows.length) return "<div><h3>" + title + "</h3><p>No data yet</p></div>";
+  const max = Math.max.apply(null, rows.map(function(r) { return Number(r[valueKey] || 0); })) || 1;
+  return "<div><h3>" + title + "</h3>" + rows.map(function(r) {
+    const n = Number(r[valueKey] || 0);
+    const w = Math.round(n * 100 / max);
+    return "<div class=bar-row><span class=label>" + String(r[labelKey] || "") +
+      "</span><div class=bar><i style=width:" + w + "%></i></div><span class=val>" + n + "</span></div>";
+  }).join("") + "</div>";
 }
 function stat(label, value) {
   return "<div class=stat><b>" + (value == null ? "-" : value) + "</b>" + label + "</div>";
@@ -254,7 +276,8 @@ function ticketTable(rows) {
       return "<tr><td>" + row.id + "</td><td>" + (row.name || "") + "</td><td>" + (row.type || "") +
         "</td><td><button type=button data-open-ticket=" + row.id + ">" + preview + "</button></td><td>" +
         (row.status || "open") + "</td><td>" +
-        (row.status !== "closed" ? "<button type=button data-close-ticket=" + row.id + ">Close</button>" : "") +
+        (row.status !== "closed" ? "<button type=button data-close-ticket=" + row.id + ">Close</button> " : "") +
+        "<button type=button data-delete-ticket=" + row.id + ">Delete</button>" +
         "</td></tr>";
     }).join("") + "</table>";
 }
@@ -366,6 +389,11 @@ document.addEventListener("click", async function(event) {
   if (t.getAttribute("data-tab")) return showTab(t.getAttribute("data-tab"));
   if (t.getAttribute("data-open-ticket")) return openTicket(t.getAttribute("data-open-ticket"));
   if (t.getAttribute("data-close-ticket")) { await act("/admin/tickets/" + t.getAttribute("data-close-ticket") + "/close", "POST"); return loadTickets(); }
+  if (t.getAttribute("data-delete-ticket")) {
+    if (!confirm("Delete this ticket permanently?")) return;
+    await act("/admin/tickets/" + t.getAttribute("data-delete-ticket"), "DELETE");
+    return loadTickets();
+  }
   if (t.getAttribute("data-open-user")) return openUser(t.getAttribute("data-open-user"));
   if (t.getAttribute("data-verify")) { await act("/admin/users/" + t.getAttribute("data-verify") + "/verify", "POST"); return loadUsers(); }
   if (t.getAttribute("data-suspend")) { await act("/admin/users/" + t.getAttribute("data-suspend") + "/suspend", "POST"); return loadUsers(); }
@@ -497,6 +525,12 @@ if (token()) {
   async close(@Req() req: any, @Param('id') id: string) {
     await requireAdmin(req);
     return this.adminService.closeTicket(Number(id));
+  }
+
+  @Delete('tickets/:id')
+  async removeTicket(@Req() req: any, @Param('id') id: string) {
+    await requireAdmin(req);
+    return this.adminService.deleteTicket(Number(id));
   }
 
   @Post('tickets/:id/reply')

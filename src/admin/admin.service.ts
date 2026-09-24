@@ -64,10 +64,43 @@ export class AdminService {
         COUNT(*) FILTER (WHERE status IN ('SETTLED','REVIEWED'))::int AS completed
       FROM exchange_offers
     `);
+    let signups: any[] = [];
+    let offerByStatus: any[] = [];
+    let ticketByType: any[] = [];
+    try {
+      signups = (await db.query(`
+        SELECT to_char(created_at::date, 'YYYY-MM-DD') AS day, COUNT(*)::int AS count
+        FROM users
+        WHERE created_at >= NOW() - INTERVAL '14 days'
+        GROUP BY 1
+        ORDER BY 1
+      `)).rows;
+    } catch (_) {}
+    try {
+      offerByStatus = (await db.query(`
+        SELECT status, COUNT(*)::int AS count
+        FROM exchange_offers
+        GROUP BY status
+        ORDER BY count DESC
+      `)).rows;
+    } catch (_) {}
+    try {
+      ticketByType = (await db.query(`
+        SELECT COALESCE(type, 'other') AS type, COUNT(*)::int AS count
+        FROM tickets
+        GROUP BY 1
+        ORDER BY count DESC
+      `)).rows;
+    } catch (_) {}
     return {
       users: users.rows[0],
       tickets: tickets.rows[0],
       offers: offers.rows[0],
+      charts: {
+        signups,
+        offers: offerByStatus,
+        tickets: ticketByType,
+      },
     };
   }
 
@@ -258,6 +291,12 @@ export class AdminService {
 
   async closeTicket(id: number) {
     const result = await db.query(`UPDATE tickets SET status = 'closed' WHERE id = $1 RETURNING id`, [id]);
+    if (!result.rows[0]) throw new UnauthorizedException('Ticket not found');
+    return { ok: true };
+  }
+
+  async deleteTicket(id: number) {
+    const result = await db.query('DELETE FROM tickets WHERE id = $1 RETURNING id', [id]);
     if (!result.rows[0]) throw new UnauthorizedException('Ticket not found');
     return { ok: true };
   }
