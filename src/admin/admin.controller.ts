@@ -88,6 +88,7 @@ export class AdminController {
       <button type="button" data-tab="tickets" class="on">Tickets</button>
       <button type="button" data-tab="users">Users</button>
       <button type="button" data-tab="exchanges">Exchanges</button>
+      <button type="button" data-tab="reviews">Reviews</button>
     </div>
     <div id="tab-tickets" class="card">
       <h2>Tickets</h2>
@@ -104,6 +105,10 @@ export class AdminController {
       <button id="searchBtn" type="button">Search</button>
       <div id="users"></div>
       <div id="userDetail"></div>
+    </div>
+    <div id="tab-reviews" class="card hide">
+      <h2>Reviews</h2>
+      <div id="reviews"></div>
     </div>
     <div id="tab-exchanges" class="card hide">
       <h2>Exchanges</h2>
@@ -192,7 +197,7 @@ async function loadAll() {
       logout();
       return;
     }
-    await Promise.all([loadStats(), loadTickets(), loadUsers(), loadExchanges()]);
+    await Promise.all([loadStats(), loadTickets(), loadUsers(), loadExchanges(), loadReviews()]);
   } catch (err) {
     $("stats").innerHTML = "<p class=error>Could not load the panel. Refresh the page.</p>";
   }
@@ -225,13 +230,29 @@ async function loadExchanges() {
   const rows = await fetch(api + "/admin/exchanges?status=" + status, { headers: headers() }).then(function(r) { return r.json(); });
   $("exchanges").innerHTML = offerTable(rows);
 }
+async function loadReviews() {
+  const rows = await fetch(api + "/admin/reviews", { headers: headers() }).then(function(r) { return r.json(); });
+  $("reviews").innerHTML = reviewTable(rows);
+}
+function reviewTable(rows) {
+  if (!Array.isArray(rows)) return "<p class=error>Could not load</p>";
+  if (!rows.length) return "<p>No rows</p>";
+  return "<table><tr><th>id</th><th>from</th><th>to</th><th>rating</th><th>skill</th><th>text</th><th>created</th></tr>" +
+    rows.map(function(row) {
+      return "<tr><td>" + row.id + "</td><td>" + (row.from_name || row.from_id || "") + "</td><td>" +
+        (row.to_name || row.to_id || "") + "</td><td>" + (row.rating || "") + "</td><td>" +
+        (row.skill || "") + "</td><td>" + String(row.text || "").replace(/</g, "&lt;") +
+        "</td><td>" + formatTime(row.created_at) + "</td></tr>";
+    }).join("") + "</table>";
+}
 function ticketTable(rows) {
   if (!Array.isArray(rows)) return "<p class=error>Could not load</p>";
   if (!rows.length) return "<p>No rows</p>";
   return "<table><tr><th>id</th><th>member</th><th>type</th><th>subject</th><th>status</th><th></th></tr>" +
     rows.map(function(row) {
+      const preview = String(row.text || row.subject || "Open ticket").replace(/</g, "&lt;").slice(0, 70);
       return "<tr><td>" + row.id + "</td><td>" + (row.name || "") + "</td><td>" + (row.type || "") +
-        "</td><td><button type=button data-open-ticket=" + row.id + ">Open ticket</button></td><td>" +
+        "</td><td><button type=button data-open-ticket=" + row.id + ">" + preview + "</button></td><td>" +
         (row.status || "open") + "</td><td>" +
         (row.status !== "closed" ? "<button type=button data-close-ticket=" + row.id + ">Close</button>" : "") +
         "</td></tr>";
@@ -312,7 +333,7 @@ async function openUser(id) {
     "<h3>" + (u.name || "") + "</h3>" +
     "<p>Email: " + (u.email || "") + "<br>City: " + (u.city || "") + "<br>Role: " + (u.role || "") +
     "<br>Balance: " + (u.balance == null ? "" : u.balance) + "<br>Rating: " + (u.rating == null ? "" : u.rating) + "</p>" +
-    "<p>Account created: " + (u.created_at || "-") + "<br>Last login: " + (u.last_login || u.updated_at || "-") + "</p>" +
+    "<p>Account created: " + formatTime(u.created_at) + "<br>Last login: " + formatTime(u.last_login || u.updated_at) + "</p>" +
     "<p>Skills offered: " + (u.offers || "-") + "</p>" +
     "<h3>Recent chats</h3>" + table(a.chats || [], ["id","name_a","name_b","last_message","updated_at"]) +
     "<h3>Offers</h3>" + table(a.offers || [], ["id","status","skill_requested","skill_offered","extra_tokens","updated_at"]) +
@@ -482,6 +503,12 @@ if (token()) {
   async reply(@Req() req: any, @Param('id') id: string, @Body() body: { text: string }) {
     await requireAdmin(req);
     return this.adminService.replyTicket(Number(id), body.text);
+  }
+
+  @Get('reviews')
+  async reviews(@Req() req: any) {
+    await requireAdmin(req);
+    return this.adminService.listReviews();
   }
 
   @Get('exchanges')

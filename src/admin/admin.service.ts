@@ -293,6 +293,23 @@ export class AdminService {
     return result.rows;
   }
 
+  async listReviews() {
+    try {
+      const result = await db.query(
+        `SELECT r.id, r.rating, r.text, r.skill, r.created_at,
+                r.from_id, r.to_id, a.name AS from_name, b.name AS to_name
+         FROM reviews r
+         LEFT JOIN users a ON a.id = r.from_id
+         LEFT JOIN users b ON b.id = r.to_id
+         ORDER BY r.id DESC
+         LIMIT 100`,
+      );
+      return result.rows;
+    } catch (_) {
+      return [];
+    }
+  }
+
   async cancelExchange(id: number) {
     const offer = (await db.query('SELECT * FROM exchange_offers WHERE id = $1', [id])).rows[0];
     if (!offer) throw new UnauthorizedException('Offer not found');
