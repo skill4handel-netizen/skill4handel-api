@@ -70,7 +70,7 @@ export class AdminController {
       <h1>Skill4Handel Admin</h1>
       <p>Support, members and exchanges</p>
     </div>
-    <form id="loginForm">
+    <div id="loginForm">
       <label>Email</label>
       <input id="email" type="email" autocomplete="username" placeholder="admin@skill4handel.com" />
       <label>Password</label>
@@ -80,7 +80,7 @@ export class AdminController {
         <button id="forgotBtn" class="ghost" type="button">Forgot password</button>
       </div>
       <p id="error" class="error"></p>
-    </form>
+    </div>
   </div>
 </div>
 <div id="app" class="hide">
