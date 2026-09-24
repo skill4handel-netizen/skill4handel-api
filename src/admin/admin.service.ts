@@ -174,6 +174,33 @@ export class AdminService {
     };
   }
 
+  async updateUser(id: number, body: any) {
+    const user = (await db.query('SELECT * FROM users WHERE id = $1', [id])).rows[0];
+    if (!user) throw new UnauthorizedException('User not found');
+    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS age INTEGER`);
+    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS language VARCHAR(10)`);
+    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_date DATE`);
+    const name = String(body.name ?? user.name ?? '').trim();
+    const email = String(body.email ?? user.email ?? '').trim().toLowerCase();
+    const city = String(body.city ?? user.city ?? '').trim();
+    const language = String(body.language ?? user.language ?? 'en').trim() === 'nl' ? 'nl' : 'en';
+    const age = body.age === '' || body.age == null ? user.age : Number(body.age);
+    const birth = body.birthDate || body.birth_date || user.birth_date || null;
+    if (!name || !email) throw new BadRequestException('Name and email are required');
+    const taken = await db.query('SELECT id FROM users WHERE email = $1 AND id <> $2', [email, id]);
+    if (taken.rows[0]) throw new BadRequestException('This email is already used');
+    await db.query(
+      `UPDATE users
+       SET name = $1, email = $2, city = $3, language = $4, age = $5, birth_date = $6, updated_at = NOW()
+       WHERE id = $7`,
+      [name, email, city, language, Number.isFinite(Number(age)) ? Number(age) : null, birth || null, id],
+    );
+    if (body.password) {
+      await this.setPassword(id, String(body.password));
+    }
+    return this.getUser(id);
+  }
+
   async deleteUser(id: number) {
     const user = (await db.query('SELECT id, role FROM users WHERE id = $1', [id])).rows[0];
     if (!user) throw new UnauthorizedException('User not found');

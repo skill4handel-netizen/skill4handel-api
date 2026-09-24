@@ -365,6 +365,15 @@ async function openUser(id) {
     "<br>Balance: " + (u.balance == null ? "" : u.balance) + "<br>Rating: " + (u.rating == null ? "" : u.rating) + "</p>" +
     "<p>Account created: " + formatTime(u.created_at) + "<br>Last login: " + formatTime(u.last_login || u.updated_at) + "</p>" +
     "<p>Skills offered: " + (u.offers || "-") + "</p>" +
+    "<h3>Registration fields</h3>" +
+    "<label>Name</label><input id=editName value=\"" + String(u.name||"").replace(/"/g,"") + "\" />" +
+    "<label>Email</label><input id=editEmail value=\"" + String(u.email||"").replace(/"/g,"") + "\" />" +
+    "<label>City</label><input id=editCity value=\"" + String(u.city||"").replace(/"/g,"") + "\" />" +
+    "<label>Language</label><select id=editLang><option value=en" + (u.language==="nl"?"":" selected") + ">English</option><option value=nl" + (u.language==="nl"?" selected":"") + ">Nederlands</option></select>" +
+    "<label>Age</label><input id=editAge type=number value=\"" + (u.age==null?"":u.age) + "\" />" +
+    "<label>Date of birth</label><input id=editBirth type=date value=\"" + String(u.birth_date||"").slice(0,10) + "\" />" +
+    "<label>New password (optional)</label><input id=editPass type=password />" +
+    "<p><button type=button id=saveUserBtn data-save-user=" + u.id + ">Save registration fields</button></p>" +
     "<h3>Recent chats</h3>" + table(a.chats || [], ["id","name_a","name_b","last_message","updated_at"]) +
     "<h3>Offers</h3>" + table(a.offers || [], ["id","status","skill_requested","skill_offered","extra_tokens","updated_at"]) +
     "<h3>Tickets</h3>" + table(a.tickets || [], ["id","type","status","created_at"]) +
@@ -401,6 +410,23 @@ document.addEventListener("click", async function(event) {
     await act("/admin/tickets/" + t.getAttribute("data-delete-ticket"), "DELETE");
     return loadTickets();
   }
+  if (t.getAttribute("data-save-user") || t.id === "saveUserBtn") {
+    const id = t.getAttribute("data-save-user") || (document.querySelector("[data-save-user]") || {}).getAttribute("data-save-user");
+    if (!id) return;
+    await act("/admin/users/" + id, "POST", {
+      name: $("editName").value,
+      email: $("editEmail").value,
+      city: $("editCity").value,
+      language: $("editLang").value,
+      age: $("editAge").value,
+      birthDate: $("editBirth").value,
+      password: $("editPass").value
+    });
+    alert("Saved");
+    await loadUsers();
+    return openUser(id);
+  }
+
   if (t.getAttribute("data-open-user")) return openUser(t.getAttribute("data-open-user"));
   if (t.getAttribute("data-verify")) { await act("/admin/users/" + t.getAttribute("data-verify") + "/verify", "POST"); return loadUsers(); }
   if (t.getAttribute("data-suspend")) { await act("/admin/users/" + t.getAttribute("data-suspend") + "/suspend", "POST"); return loadUsers(); }
@@ -472,6 +498,12 @@ if (token()) {
   async user(@Req() req: any, @Param('id') id: string) {
     await requireAdmin(req);
     return this.adminService.getUser(Number(id));
+  }
+
+  @Post('users/:id')
+  async updateUser(@Req() req: any, @Param('id') id: string, @Body() body: any) {
+    await requireAdmin(req);
+    return this.adminService.updateUser(Number(id), body || {});
   }
 
   @Delete('users/:id')
