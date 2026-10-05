@@ -78,6 +78,11 @@ export class AuthController {
     return this.authService.resendVerify(body.email);
   }
 
+  @Post('verification-status')
+  verificationStatus(@Body() body: any) {
+    return this.authService.verificationStatus(body.email);
+  }
+
   @Post('device-token')
   deviceToken(@Req() req: any, @Body() body: any) {
     return this.authService.saveDeviceToken(userIdFromRequest(req), body.token, body.platform);

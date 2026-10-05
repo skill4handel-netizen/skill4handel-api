@@ -153,6 +153,7 @@ export class AuthService {
     const found = await db.query('SELECT * FROM users WHERE email = $1', [clean]);
     const user = found.rows[0];
     if (!user || user.email_verified) return { ok: true };
+    await db.query('UPDATE email_verifications SET used = TRUE WHERE user_id = $1 AND used IS NOT TRUE', [user.id]);
     const verifyToken = Math.random().toString(36).slice(2) + Date.now().toString(36);
     await db.query('INSERT INTO email_verifications (user_id, token) VALUES ($1, $2)', [user.id, verifyToken]);
     const verifyUrl = await sendVerifyEmail(clean, verifyToken);
@@ -243,17 +244,22 @@ export class AuthService {
       [token],
     );
     const row = result.rows[0];
-    if (!row) throw new UnauthorizedException('Invalid or used link');
-    if (!row.used) {
-      await db.query('UPDATE email_verifications SET used = TRUE WHERE id = $1', [row.id]);
-      await db.query('UPDATE users SET email_verified = TRUE WHERE id = $1', [row.user_id]);
-    }
+    if (!row || row.used) throw new UnauthorizedException('Invalid or used link');
+    await db.query('UPDATE email_verifications SET used = TRUE WHERE user_id = $1', [row.user_id]);
+    await db.query('UPDATE users SET email_verified = TRUE WHERE id = $1', [row.user_id]);
     const user = (await db.query('SELECT * FROM users WHERE id = $1', [row.user_id])).rows[0];
     return {
       ok: true,
       token: signToken(row.user_id),
       user: this.privateUser(user, await this.reviewsOf(user.id), await this.historyOf(user.id)),
     };
+  }
+
+  async verificationStatus(email: string) {
+    const clean = (email || '').trim().toLowerCase();
+    if (!clean) return { verified: false };
+    const found = await db.query('SELECT email_verified FROM users WHERE email = $1', [clean]);
+    return { verified: !!found.rows[0]?.email_verified };
   }
 
   async forgotPassword(email: string) {
