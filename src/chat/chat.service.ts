@@ -632,6 +632,12 @@ export class ChatService {
     if (Number(userId) !== Number(chat.user_a_id) && Number(userId) !== Number(chat.user_b_id)) {
       throw new BadRequestException('Not in this chat');
     }
+    const offer = await this.latestOffer(chatId);
+    if (offer && offer.status === 'ACCEPTED') {
+      throw new BadRequestException('This chat cannot be deleted while the accepted session is still open. Mark the session done first.');
+    }
+    await db.query('DELETE FROM messages WHERE chat_id = $1', [chatId]);
+    await db.query('DELETE FROM exchange_offers WHERE chat_id = $1', [chatId]);
     await db.query('DELETE FROM chats WHERE id = $1', [chatId]);
     return { ok: true };
   }
