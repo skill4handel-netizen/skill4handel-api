@@ -45,7 +45,10 @@ export class AdminController {
   .stat b { display:block; font-size:22px; color:var(--navy); }
   .charts { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; }
   .chart-box h3 { margin:0 0 8px; font-size:13px; color:var(--navy); }
-  .vchart { display:flex; align-items:flex-end; gap:6px; height:120px; padding-top:6px; }
+  .charts { display:grid; grid-template-columns:1fr; gap:12px; }
+  .line-chart { width:100%; height:180px; }
+  .filters { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:8px; margin-bottom:12px; }
+  .filters button, .filters a.btn { width:auto; }
   .vcol { flex:1; display:flex; flex-direction:column; align-items:center; height:100%; justify-content:flex-end; }
   .vbar { width:100%; max-width:28px; background:var(--blue); border-radius:6px 6px 0 0; min-height:4px; }
   .vcol .val { font-size:11px; font-weight:700; margin-bottom:4px; }
@@ -96,7 +99,23 @@ export class AdminController {
   </header>
   <main>
     <div class="card grid" id="stats"></div>
-    <div class="card charts" id="charts"></div>
+    <div class="card">
+      <h2>Reports</h2>
+      <div class="filters">
+        <input id="fCity" placeholder="City" />
+        <input id="fSkill" placeholder="Skill" />
+        <select id="fStatus"><option value="">Any offer status</option><option>PROPOSED</option><option>COUNTERED</option><option>ACCEPTED</option><option>CANCELLED</option><option>SETTLED</option><option>REVIEWED</option></select>
+        <select id="fRole"><option value="">Any role</option><option value="member">member</option></select>
+        <button class="primary" onclick="loadReport()">Filter</button>
+        <button class="ghost" onclick="downloadCsv('users')">Export users</button>
+        <button class="ghost" onclick="downloadCsv('exchanges')">Export exchanges</button>
+        <button class="ghost" onclick="downloadCsv('skills')">Export skills</button>
+        <button class="ghost" onclick="downloadCsv('cities')">Export cities</button>
+      </div>
+      <div class="charts" id="charts"></div>
+      <h3>Most requested skills</h3><div id="skillReport"></div>
+      <h3>Cities by activity</h3><div id="cityReport"></div>
+    </div>
     <div class="card tabs">
       <button type="button" data-tab="tickets" class="on">Tickets</button>
       <button type="button" data-tab="users">Users</button>
@@ -237,6 +256,44 @@ async function loadAll() {
     $("stats").innerHTML = "<p class=error>Could not load the panel. Refresh the page.</p>";
   }
 }
+function filters() {
+  return { city: $("fCity").value.trim(), skill: $("fSkill").value.trim(), status: $("fStatus").value, role: $("fRole").value };
+}
+function lineChart(title, rows) {
+  const values = rows.map(function(r) { return Number(r.count) || 0; });
+  const max = Math.max.apply(null, values.concat([1]));
+  const w = 640, h = 160, pad = 16;
+  const step = values.length > 1 ? (w - pad * 2) / (values.length - 1) : 0;
+  const pts = values.map(function(v, i) {
+    const x = pad + i * step;
+    const y = h - pad - (v / max) * (h - pad * 2);
+    return x + "," + y;
+  }).join(" ");
+  return "<div class=chart-box><h3>" + title + "</h3><svg class=line-chart viewBox='0 0 " + w + " " + h + "'><polyline fill='none' stroke='#1f4e79' stroke-width='3' points='" + pts + "' /></svg></div>";
+}
+async function loadReport() {
+  const q = new URLSearchParams(filters());
+  const res = await fetch("/admin/report?" + q.toString(), { headers: headers() });
+  const data = await res.json();
+  const charts = data.charts || {};
+  $("charts").innerHTML = lineChart("New members, 30 days", charts.signups || []) + lineChart("Offers, 30 days", charts.offers || []);
+  $("skillReport").innerHTML = table(data.topSkills || [], ["skill", "count"]);
+  $("cityReport").innerHTML = table(data.activeCities || [], ["city", "members", "active_30d"]);
+  if ((data.users || []).length) $("users").innerHTML = userTable(data.users);
+  if ((data.exchanges || []).length) $("exchanges").innerHTML = offerTable(data.exchanges);
+}
+function downloadCsv(kind) {
+  const q = new URLSearchParams(filters());
+  q.set("kind", kind);
+  fetch("/admin/export?" + q.toString(), { headers: headers() }).then(function(res) { return res.blob(); }).then(function(blob) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "skill4handel-" + kind + ".csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+}
 async function loadStats() {
   const s = await fetch(api + "/admin/stats", { headers: headers() }).then(function(r) { return r.json(); });
   $("stats").innerHTML =
@@ -247,10 +304,8 @@ async function loadStats() {
     stat("Pending offers", s.offers && s.offers.pending) +
     stat("Completed offers", s.offers && s.offers.completed);
   const charts = s.charts || {};
-  $("charts").innerHTML =
-    chartBox("New members, 14 days", charts.signups || [], "day", "count") +
-    chartBox("Offers by status", charts.offers || [], "status", "count") +
-    chartBox("Tickets by type", charts.tickets || [], "type", "count");
+  $("charts").innerHTML = lineChart("New members, 30 days", charts.signups || []) + lineChart("Offers, 30 days", charts.offers || []);
+  loadReport();
 }
 function chartBox(title, rows, labelKey, valueKey) {
   if (!rows.length) return "<div class=chart-box><h3>" + title + "</h3><p>No data yet</p></div>";
@@ -530,6 +585,19 @@ if (token()) {
   recover(@Req() req: any, @Body() body: { email?: string }) {
     enforceThrottle(req, 'admin-recover', 6, 15 * 60 * 1000);
     return this.adminService.recoverFromEnv(String(body?.email || ''));
+  }
+
+  @Get('report')
+  report(@Req() req: any, @Query() query: Record<string, string>) {
+    requireAdmin(req);
+    return this.adminService.report(query);
+  }
+
+  @Get('export')
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  exportCsv(@Req() req: any, @Query() query: Record<string, string>) {
+    requireAdmin(req);
+    return this.adminService.exportCsv(query.kind || 'users', query);
   }
 
   @Get('stats')

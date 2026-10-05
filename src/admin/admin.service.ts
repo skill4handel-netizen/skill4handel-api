@@ -153,6 +153,90 @@ export class AdminService {
     };
   }
 
+
+  async report(query: Record<string, string> = {}) {
+    const city = (query.city || '').trim();
+    const skill = (query.skill || '').trim();
+    const status = (query.status || '').trim().toUpperCase();
+    const role = (query.role || '').trim();
+    const users = await db.query(
+      `SELECT id, name, email, city, offers, needs, balance, rating, email_verified,
+              is_suspended, role, created_at, last_login
+       FROM users
+       WHERE ($1 = '' OR city ILIKE '%' || $1 || '%')
+         AND ($2 = '' OR offers ILIKE '%' || $2 || '%' OR needs ILIKE '%' || $2 || '%')
+         AND ($3 = '' OR role = $3)
+         AND role <> 'admin'
+       ORDER BY id DESC
+       LIMIT 500`,
+      [city, skill, role],
+    );
+    const exchanges = await db.query(
+      `SELECT e.id, e.status, e.skill_requested, e.skill_offered, e.extra_tokens,
+              e.created_at, c.name_a, c.name_b, ua.city AS city_a, ub.city AS city_b
+       FROM exchange_offers e
+       JOIN chats c ON c.id = e.chat_id
+       LEFT JOIN users ua ON ua.id = c.user_a_id
+       LEFT JOIN users ub ON ub.id = c.user_b_id
+       WHERE ($1 = '' OR e.status = $1)
+         AND ($2 = '' OR e.skill_requested ILIKE '%' || $2 || '%' OR e.skill_offered ILIKE '%' || $2 || '%')
+         AND ($3 = '' OR ua.city ILIKE '%' || $3 || '%' OR ub.city ILIKE '%' || $3 || '%')
+       ORDER BY e.id DESC
+       LIMIT 500`,
+      [status, skill, city],
+    );
+    const topSkills = await db.query(
+      `SELECT skill, COUNT(*)::int AS count FROM (
+         SELECT NULLIF(TRIM(skill_requested), '') AS skill FROM exchange_offers
+         UNION ALL
+         SELECT NULLIF(TRIM(skill_offered), '') FROM exchange_offers
+       ) s
+       WHERE skill IS NOT NULL
+       GROUP BY skill
+       ORDER BY count DESC
+       LIMIT 12`,
+    );
+    const activeCities = await db.query(
+      `SELECT COALESCE(NULLIF(TRIM(city), ''), 'Unknown') AS city,
+              COUNT(*)::int AS members,
+              COUNT(*) FILTER (WHERE last_login > NOW() - INTERVAL '30 days')::int AS active_30d
+       FROM users
+       WHERE role <> 'admin'
+       GROUP BY 1
+       ORDER BY active_30d DESC, members DESC
+       LIMIT 12`,
+    );
+    const signups = await db.query(
+      `SELECT to_char(d::date, 'YYYY-MM-DD') AS day,
+              COALESCE(COUNT(u.id), 0)::int AS count
+       FROM generate_series(CURRENT_DATE - INTERVAL '29 days', CURRENT_DATE, '1 day') d
+       LEFT JOIN users u ON u.created_at::date = d::date AND u.role <> 'admin'
+       GROUP BY d
+       ORDER BY d`,
+    );
+    const offersDaily = await db.query(
+      `SELECT to_char(d::date, 'YYYY-MM-DD') AS day,
+              COALESCE(COUNT(e.id), 0)::int AS count
+       FROM generate_series(CURRENT_DATE - INTERVAL '29 days', CURRENT_DATE, '1 day') d
+       LEFT JOIN exchange_offers e ON e.created_at::date = d::date
+       GROUP BY d
+       ORDER BY d`,
+    );
+    return {
+      users: users.rows,
+      exchanges: exchanges.rows,
+      topSkills: topSkills.rows,
+      activeCities: activeCities.rows,
+      charts: { signups: signups.rows, offers: offersDaily.rows },
+    };
+  }
+
+  async exportCsv(kind = 'users', query: Record<string, string> = {}) {
+    const report = await this.report(query);
+    const rows = kind === 'exchanges' ? report.exchanges : kind === 'cities' ? report.activeCities : kind === 'skills' ? report.topSkills : report.users;
+    return toCsv(rows);
+  }
+
   async listUsers(query = '') {
     const q = query.trim();
     if (!q) {
@@ -441,4 +525,12 @@ export class AdminService {
     } catch (_) {}
     return { ok: true };
   }
+}
+
+function toCsv(rows: any[]) {
+  if (!rows.length) return "\ufeffempty\n";
+  const keys = Object.keys(rows[0]);
+  const esc = (value: unknown) => '"' + String(value ?? "").replace(/"/g, '""') + '"';
+  const lines = [keys.join(",")].concat(rows.map((row) => keys.map((key) => esc(row[key])).join(",")));
+  return "\ufeff" + lines.join("\n");
 }
