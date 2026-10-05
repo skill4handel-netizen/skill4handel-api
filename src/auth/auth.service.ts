@@ -7,6 +7,15 @@ import { sendResetEmail, sendVerifyEmail } from '../mail';
 
 @Injectable()
 export class AuthService {
+
+  private assertPassword(password: string) {
+    const value = String(password || '');
+    const ok = value.length >= 8 && /[A-Za-z]/.test(value) && /[0-9]/.test(value);
+    if (!ok) {
+      throw new BadRequestException('Use at least 8 characters, including one letter and one number.');
+    }
+  }
+
   private sha256(password: string) {
     return createHash('sha256').update(password).digest('hex');
   }
@@ -110,6 +119,7 @@ export class AuthService {
   }
 
   async signup(name: string, email: string, password: string, age?: number, acceptedTerms?: boolean, city?: string, phone?: string, accessibility?: boolean, birthDate?: string, language?: string) {
+    this.assertPassword(password);
     if (!acceptedTerms) throw new BadRequestException('You must accept the terms');
     await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(40)`);
     await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS accessibility BOOLEAN DEFAULT FALSE`);
@@ -264,9 +274,8 @@ export class AuthService {
   }
 
   async resetPassword(token: string, password: string) {
-    if (!token || !password || String(password).length < 6) {
-      throw new BadRequestException('The new password must have at least 6 characters.');
-    }
+    this.assertPassword(password);
+    if (!token) throw new BadRequestException('This reset link is not valid.');
     await this.ensureResetTable();
     const found = await db.query(
       `SELECT * FROM password_resets
@@ -284,9 +293,8 @@ export class AuthService {
   }
 
   async changePassword(userId: number, currentPassword: string, newPassword: string) {
-    if (!currentPassword || !newPassword || String(newPassword).length < 6) {
-      throw new BadRequestException('The new password must have at least 6 characters.');
-    }
+    this.assertPassword(newPassword);
+    if (!currentPassword) throw new BadRequestException('The current password is incorrect.');
     const result = await db.query('SELECT id, password_hash FROM users WHERE id = $1', [userId]);
     const user = result.rows[0];
     if (!user) throw new BadRequestException('Account not found');
