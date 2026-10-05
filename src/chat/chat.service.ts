@@ -636,6 +636,15 @@ export class ChatService {
     if (offer && offer.status === 'ACCEPTED') {
       throw new BadRequestException('This chat cannot be deleted while the accepted session is still open. Mark the session done first.');
     }
+    const other = Number(chat.user_a_id) === Number(userId) ? Number(chat.user_b_id) : Number(chat.user_a_id);
+    const mine = Number(chat.user_a_id) === Number(userId) ? chat.name_a : chat.name_b;
+    const hadOffer = offer && ['PROPOSED', 'COUNTERED'].includes(offer.status);
+    const note = hadOffer
+      ? `${mine || 'A member'} deleted the chat. The unanswered offer was cancelled.`
+      : `${mine || 'A member'} deleted the chat. Messages in that chat were removed.`;
+    try {
+      await this.ping(other, 'Chat deleted', note, { type: 'chat' });
+    } catch (_) {}
     await db.query('DELETE FROM messages WHERE chat_id = $1', [chatId]);
     await db.query('DELETE FROM exchange_offers WHERE chat_id = $1', [chatId]);
     await db.query('DELETE FROM chats WHERE id = $1', [chatId]);
