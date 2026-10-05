@@ -151,33 +151,48 @@ export class ChatService {
   }
 
   private async expireOldOffer(offer: any, chat: any) {
-    if (!offer || !['PROPOSED', 'COUNTERED'].includes(offer.status)) return offer;
+    if (!offer || !chat) return offer;
+    const status = String(offer.status || '');
     const start = new Date(offer.created_at || offer.updated_at || 0).getTime();
     const scheduled = offer.scheduled_at ? new Date(offer.scheduled_at).getTime() : 0;
-    const noReply = !!start && Date.now() - start >= 24 * 60 * 60 * 1000;
-    const timePassed = !!scheduled && scheduled <= Date.now();
-    if (!noReply && !timePassed) return offer;
+    const noReply = ['PROPOSED', 'COUNTERED'].includes(status) && (!start || Date.now() - start >= 24 * 60 * 60 * 1000);
+    const unansweredTimePassed = ['PROPOSED', 'COUNTERED'].includes(status) && !!scheduled && scheduled <= Date.now();
+    if (!noReply && !unansweredTimePassed) return offer;
     await db.query(`UPDATE exchange_offers SET status = 'CANCELLED', updated_at = NOW() WHERE id = $1`, [offer.id]);
+    const reason = unansweredTimePassed
+      ? 'The offer expired because the scheduled time passed without a response. Both members may start a new request.'
+      : 'The offer was cancelled automatically because no response was received within 24 hours. Both members may start a new request.';
     try {
       await db.query(`INSERT INTO messages (chat_id, from_id, type, text) VALUES ($1, $2, 'text', $3)`, [
         chat.id,
-        offer.proposed_by,
-        timePassed
-          ? 'The offer expired because the scheduled time passed without a response. Both members may start a new request.'
-          : 'The offer was cancelled automatically because no response was received within 24 hours. Both members may start a new request.',
+        offer.proposed_by || chat.user_a_id,
+        reason,
+      ]);
+      await db.query(`UPDATE chats SET last_message = $1, last_from_id = $2, updated_at = NOW() WHERE id = $3`, [
+        'Offer closed',
+        offer.proposed_by || chat.user_a_id,
+        chat.id,
       ]);
     } catch (_) {}
-    await db.query(`UPDATE chats SET last_message = $1, last_from_id = $2, updated_at = NOW() WHERE id = $3`, [
-      timePassed ? 'Offer expired' : 'Offer cancelled: no response within 24 hours',
-      offer.proposed_by,
-      chat.id,
-    ]);
-    const closed = timePassed
-      ? 'An offer expired because the scheduled time passed.'
-      : 'An offer was cancelled because there was no response within 24 hours.';
-    await this.ping(Number(chat.user_a_id), 'Offer closed', closed, { type: 'offer', chatId: String(chat.id) });
-    await this.ping(Number(chat.user_b_id), 'Offer closed', closed, { type: 'offer', chatId: String(chat.id) });
+    try {
+      await this.ping(Number(chat.user_a_id), 'Offer closed', reason, { type: 'offer', chatId: String(chat.id) });
+      await this.ping(Number(chat.user_b_id), 'Offer closed', reason, { type: 'offer', chatId: String(chat.id) });
+    } catch (_) {}
     return { ...offer, status: 'CANCELLED' };
+  }
+
+  private async sweepExpired(userId: number) {
+    const result = await db.query(
+      `SELECT e.*, c.user_a_id, c.user_b_id, c.id AS chat_id
+       FROM exchange_offers e
+       JOIN chats c ON c.id = e.chat_id
+       WHERE (c.user_a_id = $1 OR c.user_b_id = $1)
+         AND e.status IN ('PROPOSED', 'COUNTERED')`,
+      [userId],
+    );
+    for (const row of result.rows) {
+      await this.expireOldOffer(row, { id: row.chat_id, user_a_id: row.user_a_id, user_b_id: row.user_b_id });
+    }
   }
 
   private async pendingSwap(chat: any) {
@@ -239,7 +254,7 @@ export class ChatService {
        FROM exchange_offers e
        JOIN chats c ON c.id = e.chat_id
        WHERE (c.user_a_id = $1 OR c.user_b_id = $1)
-         AND e.status IN ('SETTLED', 'REVIEWED', 'REJECTED', 'CANCELLED')
+         AND e.status IN ('ACCEPTED', 'SETTLED', 'REVIEWED', 'REJECTED', 'CANCELLED')
        ORDER BY e.updated_at DESC`,
       [userId],
     );
@@ -252,6 +267,7 @@ export class ChatService {
   }
 
   async list(userId: number) {
+    await this.sweepExpired(userId);
     const result = await db.query(
       `SELECT * FROM chats
        WHERE (user_a_id = $1 OR user_b_id = $1)
@@ -310,7 +326,7 @@ export class ChatService {
             [myId, otherId, myName, otherName],
           )
         ).rows[0];
-    const latest = await this.latestOffer(chat.id);
+    const latest = await this.expireOldOffer(await this.latestOffer(chat.id), chat);
     const openOffer = latest && ['PROPOSED', 'COUNTERED', 'ACCEPTED'].includes(latest.status);
     if (!openOffer) {
       const updated = await db.query(
@@ -326,6 +342,7 @@ export class ChatService {
   async get(id: number, userId?: number) {
     const result = await db.query('SELECT * FROM chats WHERE id = $1', [id]);
     if (!result.rows[0]) return null;
+    if (userId) await this.sweepExpired(userId);
     if (userId) await this.markRead(result.rows[0], userId);
     return this.pack(result.rows[0]);
   }
@@ -359,6 +376,9 @@ export class ChatService {
       return (Date.now() - new Date(row.updated_at).getTime()) / 864e5 <= 7;
     }).length;
     if (weekCount >= 3) throw new BadRequestException('Maximum 3 completed swaps with this person per week.');
+    if (pair.rows.some((row: any) => row.status === 'ACCEPTED')) {
+      throw new BadRequestException('Finish the open session with this person before starting another exchange.');
+    }
   }
 
   async proposeSwap(chatId: number, userId: number, body: any) {
