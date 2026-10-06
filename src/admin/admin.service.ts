@@ -328,7 +328,53 @@ export class AdminService {
     return { title: 'Members', from: start, to: end, rows };
   }
 
+
+  private async audit(action: string, userId: number, note = '') {
+    await db.query(`CREATE TABLE IF NOT EXISTS admin_audit (
+      id SERIAL PRIMARY KEY, action VARCHAR(80) NOT NULL, user_id INTEGER, note TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+    await db.query('INSERT INTO admin_audit (action, user_id, note) VALUES ($1, $2, $3)', [action, userId || null, note]);
+  }
+
+  async events(query: Record<string, string> = {}) {
+    const kind = (query.kind || '').trim();
+    const from = (query.from || '2000-01-01').slice(0, 10);
+    const to = (query.to || new Date().toISOString()).slice(0, 10);
+    const rows = [];
+    if (!kind || kind === 'signup') {
+      const data = await db.query(`SELECT id, name, email, city, created_at FROM users WHERE created_at::date BETWEEN $1::date AND $2::date ORDER BY created_at DESC LIMIT 200`, [from, to]);
+      rows.push(...data.rows.map((row: any) => ({ when: row.created_at, type: 'signup', who: row.name, detail: row.email + ' · ' + (row.city || '') })));
+    }
+    if (!kind || kind === 'offer') {
+      const data = await db.query(`SELECT e.status, e.skill_requested, e.skill_offered, e.created_at, c.name_a, c.name_b FROM exchange_offers e JOIN chats c ON c.id = e.chat_id WHERE e.created_at::date BETWEEN $1::date AND $2::date ORDER BY e.created_at DESC LIMIT 200`, [from, to]);
+      rows.push(...data.rows.map((row: any) => ({ when: row.created_at, type: 'offer', who: row.name_a + ' / ' + row.name_b, detail: row.status + ' · ' + row.skill_requested + ' / ' + row.skill_offered })));
+    }
+    if (!kind || kind === 'message') {
+      const data = await db.query(`SELECT m.text, m.created_at, u.name FROM messages m LEFT JOIN users u ON u.id = m.from_id WHERE m.created_at::date BETWEEN $1::date AND $2::date ORDER BY m.created_at DESC LIMIT 200`, [from, to]);
+      rows.push(...data.rows.map((row: any) => ({ when: row.created_at, type: 'message', who: row.name || 'member', detail: row.text })));
+    }
+    if (!kind || kind === 'review') {
+      const data = await db.query(`SELECT rating, text, created_at, from_name FROM reviews WHERE created_at::date BETWEEN $1::date AND $2::date ORDER BY created_at DESC LIMIT 200`, [from, to]);
+      rows.push(...data.rows.map((row: any) => ({ when: row.created_at, type: 'review', who: row.from_name, detail: row.rating + ' stars · ' + (row.text || '') })));
+    }
+    if (!kind || kind === 'ticket') {
+      const data = await db.query(`SELECT name, type, status, text, created_at FROM tickets WHERE created_at::date BETWEEN $1::date AND $2::date ORDER BY created_at DESC LIMIT 200`, [from, to]);
+      rows.push(...data.rows.map((row: any) => ({ when: row.created_at, type: 'ticket', who: row.name, detail: row.type + ' · ' + row.status + ' · ' + row.text })));
+    }
+    if (!kind || kind === 'wallet') {
+      const data = await db.query(`SELECT w.amount, w.title, w.created_at, u.name FROM wallet_transactions w LEFT JOIN users u ON u.id = w.user_id WHERE w.created_at::date BETWEEN $1::date AND $2::date ORDER BY w.created_at DESC LIMIT 200`, [from, to]);
+      rows.push(...data.rows.map((row: any) => ({ when: row.created_at, type: 'wallet', who: row.name, detail: row.amount + ' · ' + row.title })));
+    }
+    if (!kind || kind === 'admin') {
+      const data = await db.query(`SELECT action, note, created_at FROM admin_audit WHERE action <> 'view' AND created_at::date BETWEEN $1::date AND $2::date ORDER BY created_at DESC LIMIT 200`, [from, to]);
+      rows.push(...data.rows.map((row: any) => ({ when: row.created_at, type: 'admin', who: 'admin', detail: row.action + ' · ' + (row.note || '') })));
+    }
+    rows.sort((a, b) => new Date(b.when).getTime() - new Date(a.when).getTime());
+    return rows.slice(0, 300);
+  }
+
   async exportCsv(kind = 'users', query: Record<string, string> = {}) {
+    if (kind === 'events') return toCsv(await this.events(query));
     if (['members','offers','skills','cities','tickets','reviews'].includes(kind)) {
       const chart = await this.chart(kind, query);
       return toCsv(chart.rows);
@@ -423,12 +469,23 @@ export class AdminService {
     if (!name || !email) throw new BadRequestException('Name and email are required');
     const taken = await db.query('SELECT id FROM users WHERE email = $1 AND id <> $2', [email, id]);
     if (taken.rows[0]) throw new BadRequestException('This email is already used');
+    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(40)`);
+    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS gender VARCHAR(20)`);
+    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT`);
+    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS photo_url TEXT`);
+    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS accessibility BOOLEAN DEFAULT FALSE`);
     await db.query(
       `UPDATE users
-       SET name = $1, email = $2, city = $3, language = $4, age = $5, birth_date = $6, updated_at = NOW()
+       SET name = $1, email = $2, city = $3, language = $4, age = $5, birth_date = $6,
+           phone = $8, gender = $9, bio = $10, offers = $11, needs = $12, photo_url = $13,
+           accessibility = $14, email_verified = $15, updated_at = NOW()
        WHERE id = $7`,
-      [name, email, city, language, Number.isFinite(Number(age)) ? Number(age) : null, birth || null, id],
+      [name, email, city, language, Number.isFinite(Number(age)) ? Number(age) : null, birth || null, id,
+       String(body.phone ?? user.phone ?? ''), String(body.gender ?? user.gender ?? ''), String(body.bio ?? user.bio ?? ''),
+       String(body.offers ?? user.offers ?? ''), String(body.needs ?? user.needs ?? ''), String(body.photoUrl ?? body.photo_url ?? user.photo_url ?? ''),
+       body.accessibility == null ? !!user.accessibility : !!body.accessibility, body.emailVerified == null ? !!user.email_verified : !!body.emailVerified],
     );
+    await this.audit('update-user', id, name);
     if (body.password) {
       await this.setPassword(id, String(body.password));
     }

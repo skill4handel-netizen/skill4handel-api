@@ -69,6 +69,7 @@ export class AdminController {
       <button data-tab="skills" type="button">Skills chart</button>
       <button data-tab="cities" type="button">Cities chart</button>
       <button data-tab="tickets" type="button">Tickets</button>
+      <button data-tab="activity" type="button">Activity log</button>
       <button data-tab="users" type="button">Members</button>
       <button data-tab="exchanges" type="button">Exchanges</button>
       <button data-tab="reviews" type="button">Reviews</button>
@@ -81,6 +82,7 @@ export class AdminController {
     <section id="tab-skills" class="card hide"></section>
     <section id="tab-cities" class="card hide"></section>
     <section id="tab-tickets" class="card hide"><select id="ticketFilter"><option value="">All</option><option value="open">Open</option><option value="closed">Closed</option></select><div id="tickets"></div></section>
+    <section id="tab-activity" class="card hide"><div class="filters"><input id="actFrom" type="date" /><input id="actTo" type="date" /><select id="actKind"><option value="">All events</option><option value="signup">Signups</option><option value="offer">Offers</option><option value="message">Messages</option><option value="review">Reviews</option><option value="ticket">Tickets</option><option value="wallet">Wallet</option><option value="admin">Admin changes</option></select><button id="actBtn" class="primary" type="button">Show</button><button id="actExport" type="button">Export Excel</button></div><div id="activity"></div></section>
     <section id="tab-users" class="card hide"><div class="filters"><input id="userQuery" placeholder="Search" /><button id="searchBtn" type="button">Search</button></div><div id="users"></div><div id="userDetail"></div></section>
     <section id="tab-exchanges" class="card hide"><select id="offerFilter"><option value="">All</option><option>PROPOSED</option><option>COUNTERED</option><option>ACCEPTED</option><option>CANCELLED</option><option>SETTLED</option><option>REVIEWED</option></select><div id="exchanges"></div></section>
     <section id="tab-reviews" class="card hide"><div id="reviews"></div></section>
@@ -94,13 +96,14 @@ function headers(){return {Authorization:"Bearer "+token(),"Content-Type":"appli
 function $(id){return document.getElementById(id);}
 function esc(v){return String(v==null?"":v).replace(/&/g,"&").replace(/</g,"<");}
 function showTab(name){
-  ["members","offers","skills","cities","tickets","users","exchanges","reviews"].forEach(function(id){
+  ["members","offers","skills","cities","tickets","activity","users","exchanges","reviews"].forEach(function(id){
     var el=$("tab-"+id); if(el) el.className="card"+(id===name?"":" hide");
   });
   document.querySelectorAll(".tabs button").forEach(function(el){el.className=el.getAttribute("data-tab")===name?"on":"";});
   $("pageTitle").textContent=name.charAt(0).toUpperCase()+name.slice(1);
   if(["members","offers","skills","cities"].indexOf(name)>=0) loadChart(name);
   if(name==="reviews") loadReviews();
+  if(name==="activity") loadActivity();
 }
 function filters(kind){
   return {
@@ -174,12 +177,14 @@ async function loadExchanges(){var rows=await fetch("/admin/exchanges?status="+$
 async function loadReviews(){var rows=await fetch("/admin/reviews",{headers:headers()}).then(r=>r.json()); $("reviews").innerHTML=reviewTable(rows);}
 function formatTime(v){if(!v)return "-"; var d=new Date(v); return isNaN(d.getTime())?String(v):d.toLocaleString();}
 function ticketTable(rows){if(!Array.isArray(rows)||!rows.length)return "<p>No tickets</p>"; return "<table><tr><th>Member</th><th>Type</th><th>Subject</th><th>Status</th><th></th></tr>"+rows.map(function(row){return "<tr><td>"+esc(row.name)+"</td><td>"+esc(row.type)+"</td><td><button data-open-ticket="+row.id+">"+esc(String(row.text||row.subject||"Open").slice(0,70))+"</button></td><td>"+esc(row.status||"open")+"</td><td><button data-close-ticket="+row.id+">Close</button> <button data-delete-ticket="+row.id+">Delete</button></td></tr>";}).join("")+"</table>";}
-function userTable(rows){if(!Array.isArray(rows)||!rows.length)return "<p>No members</p>"; return "<table><tr><th>Name</th><th>Email</th><th>City</th><th>Balance</th><th>Status</th><th></th></tr>"+rows.map(function(row){return "<tr><td><button data-open-user="+row.id+">"+esc(row.name)+"</button></td><td>"+esc(row.email)+"</td><td>"+esc(row.city)+"</td><td>"+esc(row.balance)+"</td><td>"+esc(row.role)+(row.is_suspended?" suspended":"")+"</td><td><button data-password="+row.id+">Password</button> <button data-wallet="+row.id+">Wallet</button> "+(row.role==="admin"?"":"<button data-delete-user="+row.id+">Delete</button>")+"</td></tr>";}).join("")+"</table>";}
+function userTable(rows){if(!Array.isArray(rows)||!rows.length)return "<p>No members</p>"; return "<table><tr><th>Name</th><th>Email</th><th>City</th><th>Balance</th><th>Status</th><th></th></tr>"+rows.map(function(row){var role=row.role==="admin"?"<button data-role-user="+row.id+">Make member</button>":"<button data-role-admin="+row.id+">Make admin</button>"; var sus=row.is_suspended?"<button data-unsuspend="+row.id+">Unsuspend</button>":"<button data-suspend="+row.id+">Suspend</button>"; return "<tr><td><button data-open-user="+row.id+">"+esc(row.name)+"</button></td><td>"+esc(row.email)+"</td><td>"+esc(row.city)+"</td><td>"+esc(row.balance)+"</td><td>"+esc(row.role)+(row.is_suspended?" suspended":"")+(row.email_verified?"":" unverified")+"</td><td>"+role+" "+sus+" <button data-verify="+row.id+">Verify</button> <button data-password="+row.id+">Password</button> <button data-wallet="+row.id+">Wallet</button> "+(row.role==="admin"?"":"<button data-delete-user="+row.id+">Delete</button>")+"</td></tr>";}).join("")+"</table>";}
 function offerTable(rows){if(!Array.isArray(rows)||!rows.length)return "<p>No exchanges</p>"; return "<table><tr><th>Members</th><th>Requested</th><th>Offered</th><th>Status</th><th>When</th><th></th></tr>"+rows.map(function(row){return "<tr><td>"+esc(row.name_a)+" / "+esc(row.name_b)+"</td><td>"+esc(row.skill_requested)+"</td><td>"+esc(row.skill_offered)+"</td><td>"+esc(row.status)+"</td><td>"+formatTime(row.created_at)+"</td><td><button data-cancel-offer="+row.id+">Cancel</button></td></tr>";}).join("")+"</table>";}
 function reviewTable(rows){if(!Array.isArray(rows)||!rows.length)return "<p>No reviews</p>"; return "<table><tr><th>From</th><th>To</th><th>Stars</th><th>Text</th><th>When</th></tr>"+rows.map(function(row){return "<tr><td>"+esc(row.from_name||row.from_id)+"</td><td>"+esc(row.to_name||row.to_id)+"</td><td>"+esc(row.rating)+"</td><td>"+esc(row.text)+"</td><td>"+formatTime(row.created_at)+"</td></tr>";}).join("")+"</table>";}
 async function openTicket(id){currentTicket=id; var row=await fetch("/admin/tickets/"+id,{headers:headers()}).then(r=>r.json()); $("ticketTitle").textContent="Ticket "+id; $("ticketBody").textContent=row.text||""; $("ticketBox").showModal();}
 async function replyTicket(){await act("/admin/tickets/"+currentTicket+"/reply","POST",{text:$("ticketReply").value}); $("ticketBox").close(); loadTickets();}
-async function openUser(id){var data=await fetch("/admin/users/"+id,{headers:headers()}).then(r=>r.json()); var u=data.user||{}; $("userDetail").innerHTML="<h3>"+esc(u.name)+"</h3><p>"+esc(u.email)+" · "+esc(u.city)+" · created "+formatTime(u.created_at)+" · last login "+formatTime(u.last_login)+"</p><div class=filters><input id=editName value='"+esc(u.name)+"' /><input id=editEmail value='"+esc(u.email)+"' /><input id=editCity value='"+esc(u.city)+"' /><button data-save-user="+u.id+">Save</button></div>";}
+function field(id,label,value){return "<label>"+label+" <input id="+id+" value='"+esc(value)+"' /></label>";}
+async function openUser(id){var data=await fetch("/admin/users/"+id,{headers:headers()}).then(r=>r.json()); var u=data.user||{}; var a=data.activity||{}; $("userDetail").innerHTML="<h3>"+esc(u.name)+"</h3><p>Created "+formatTime(u.created_at)+" · last login "+formatTime(u.last_login)+" · balance "+esc(u.balance)+" · rating "+esc(u.rating)+"</p><div class=filters>"+field("editName","Name",u.name)+field("editEmail","Email",u.email)+field("editCity","City",u.city)+field("editPhone","Phone",u.phone)+field("editLang","Language",u.language||"en")+field("editBirth","Birth date",String(u.birth_date||"").slice(0,10))+field("editAge","Age",u.age)+field("editGender","Gender",u.gender)+field("editPhoto","Photo URL",u.photo_url)+field("editOffers","Skills offered",u.offers)+field("editNeeds","Skills needed",u.needs)+field("editBio","Bio",u.bio)+"<button class=primary data-save-user="+u.id+">Save all signup fields</button></div><h4>Chats</h4><pre>"+esc(JSON.stringify(a.chats||[],null,2))+"</pre><h4>Offers</h4><pre>"+esc(JSON.stringify(a.offers||[],null,2))+"</pre><h4>Reviews</h4><pre>"+esc(JSON.stringify(a.reviews||[],null,2))+"</pre><h4>Wallet</h4><pre>"+esc(JSON.stringify(a.wallet||[],null,2))+"</pre>";}
+async function loadActivity(){var q=new URLSearchParams({kind:$("actKind").value,from:$("actFrom").value,to:$("actTo").value}); var rows=await fetch("/admin/events?"+q.toString(),{headers:headers()}).then(r=>r.json()); $("activity").innerHTML=Array.isArray(rows)&&rows.length?"<table><tr><th>When</th><th>Type</th><th>Who</th><th>Detail</th></tr>"+rows.map(function(row){return "<tr><td>"+formatTime(row.when)+"</td><td>"+esc(row.type)+"</td><td>"+esc(row.who)+"</td><td>"+esc(row.detail)+"</td></tr>";}).join("")+"</table>":"<p>No events in this filter.</p>";}
 async function act(url, method, body){var res=await fetch(url,{method:method,headers:headers(),body:body?JSON.stringify(body):undefined}); var data=await res.json().catch(function(){return {};}); if(!res.ok){alert(data.message||"Request failed"); return false;} return data;}
 document.addEventListener("click", async function(event){
   var t=event.target.closest?event.target.closest("button"):event.target; if(!t)return;
@@ -196,7 +201,14 @@ document.addEventListener("click", async function(event){
   if(t.getAttribute("data-close-ticket")){await act("/admin/tickets/"+t.getAttribute("data-close-ticket")+"/close","POST"); return loadTickets();}
   if(t.getAttribute("data-delete-ticket")){if(confirm("Delete this ticket?")){await act("/admin/tickets/"+t.getAttribute("data-delete-ticket"),"DELETE"); loadTickets();}}
   if(t.getAttribute("data-open-user"))return openUser(t.getAttribute("data-open-user"));
-  if(t.getAttribute("data-save-user")){await act("/admin/users/"+t.getAttribute("data-save-user"),"POST",{name:$("editName").value,email:$("editEmail").value,city:$("editCity").value}); return openUser(t.getAttribute("data-save-user"));}
+  if(t.id==="actBtn")return loadActivity();
+  if(t.id==="actExport"){var q=new URLSearchParams({kind:"events",from:$("actFrom").value,to:$("actTo").value}); return fetch("/admin/export?kind=events&"+q.toString(),{headers:headers()}).then(r=>r.text()).then(function(csv){var a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"})); a.download="activity.csv"; a.click();});}
+  if(t.getAttribute("data-save-user")){await act("/admin/users/"+t.getAttribute("data-save-user"),"POST",{name:$("editName").value,email:$("editEmail").value,city:$("editCity").value,phone:$("editPhone").value,language:$("editLang").value,birthDate:$("editBirth").value,age:$("editAge").value,gender:$("editGender").value,photoUrl:$("editPhoto").value,offers:$("editOffers").value,needs:$("editNeeds").value,bio:$("editBio").value}); alert("Saved"); return openUser(t.getAttribute("data-save-user"));}
+  if(t.getAttribute("data-role-user")){await act("/admin/users/"+t.getAttribute("data-role-user")+"/role","POST",{role:"user"}); return loadUsers();}
+  if(t.getAttribute("data-role-admin")){await act("/admin/users/"+t.getAttribute("data-role-admin")+"/role","POST",{role:"admin"}); return loadUsers();}
+  if(t.getAttribute("data-suspend")){await act("/admin/users/"+t.getAttribute("data-suspend")+"/suspend","POST"); return loadUsers();}
+  if(t.getAttribute("data-unsuspend")){await act("/admin/users/"+t.getAttribute("data-unsuspend")+"/unsuspend","POST"); return loadUsers();}
+  if(t.getAttribute("data-verify")){await act("/admin/users/"+t.getAttribute("data-verify")+"/verify","POST"); return loadUsers();}
   if(t.getAttribute("data-password")){var password=prompt("New password"); if(password) await act("/admin/users/"+t.getAttribute("data-password")+"/password","POST",{password:password});}
   if(t.getAttribute("data-wallet")){var amount=prompt("Amount, for example 10 or -5"); if(amount){var data=await act("/admin/users/"+t.getAttribute("data-wallet")+"/wallet","POST",{amount:Number(amount),title:"Admin adjustment"}); if(data) alert("Balance "+data.balance);}}
   if(t.getAttribute("data-delete-user")){if(confirm("Delete this member?")){await act("/admin/users/"+t.getAttribute("data-delete-user"),"DELETE"); loadUsers();}}
@@ -306,6 +318,12 @@ if(token()){$("login").className="hide"; $("app").className="shell"; loadAll();}
   async wallet(@Req() req: any, @Param('id') id: string, @Body() body: { amount: number; title?: string }) {
     await requireAdmin(req);
     return this.adminService.adjustWallet(Number(id), Number(body.amount), body.title);
+  }
+
+  @Get('events')
+  events(@Req() req: any, @Query() query: Record<string, string>) {
+    requireAdmin(req);
+    return this.adminService.events(query);
   }
 
   @Get('tickets')
