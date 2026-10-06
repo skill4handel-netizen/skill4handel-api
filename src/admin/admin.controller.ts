@@ -278,26 +278,33 @@ async function loadAll() {
 function filters() {
   return { city: $("fCity").value.trim(), skill: $("fSkill").value.trim(), status: $("fStatus").value, role: $("fRole").value };
 }
-function lineChart(title, rows) {
-  const values = rows.map(function(r) { return Number(r.count) || 0; });
-  const max = Math.max.apply(null, values.concat([1]));
-  const w = 640, h = 160, pad = 16;
-  const step = values.length > 1 ? (w - pad * 2) / (values.length - 1) : 0;
-  const pts = values.map(function(v, i) {
-    const x = pad + i * step;
-    const y = h - pad - (v / max) * (h - pad * 2);
-    return x + "," + y;
-  }).join(" ");
-  return "<div class=chart-box><h3>" + title + "</h3><svg class=line-chart viewBox='0 0 " + w + " " + h + "'><polyline fill='none' stroke='#1f4e79' stroke-width='3' points='" + pts + "' /></svg></div>";
+function esc(value) { return String(value == null ? "" : value).replace(/&/g,"&").replace(/</g,"<"); }
+function shortDate(value) {
+  const text = String(value || "");
+  const parts = text.split("-");
+  return parts.length === 3 ? parts[2] + " " + ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][Number(parts[1]) - 1] : text;
 }
+function barChart(title, note, rows, labelKey, valueKey) {
+  const list = rows || [];
+  if (!list.length) return "<div class=chart-box><h3>" + esc(title) + "</h3><p>No data yet</p></div>";
+  const max = Math.max.apply(null, list.map(function(r) { return Number(r[valueKey] || 0); }).concat([1]));
+  return "<div class=chart-box><h3>" + esc(title) + "</h3><p class=chart-note>" + esc(note) + "</p>" +
+    list.map(function(r) {
+      const n = Number(r[valueKey] || 0);
+      const label = labelKey === "day" ? shortDate(r[labelKey]) : (r[labelKey] || "Unknown");
+      return "<div class=bar-row><span>" + esc(label) + "</span><div class=bar-track><div class=bar-fill style=width:" +
+        Math.max(2, Math.round(n * 100 / max)) + "%></div></div><b>" + n + "</b></div>";
+    }).join("") + "</div>";
+}
+function lineChart(title, rows) { return barChart(title, "Each row is one day. The number is the count.", rows, "day", "count"); }
 async function loadReport() {
   const q = new URLSearchParams(filters());
   const res = await fetch("/admin/report?" + q.toString(), { headers: headers() });
   const data = await res.json();
   const charts = data.charts || {};
-  $("charts").innerHTML = lineChart("New members, 30 days", charts.signups || []) + lineChart("Offers, 30 days", charts.offers || []);
-  $("skillReport").innerHTML = table(data.topSkills || [], ["skill", "count"]);
-  $("cityReport").innerHTML = table(data.activeCities || [], ["city", "members", "active_30d"]);
+  $("charts").innerHTML = barChart("New members, 30 days", "Date on the left, number of new accounts on the right.", charts.signups || [], "day", "count") + barChart("Offers", "Date or status on the left, count on the right.", (charts.offers || []).map(function(r){ return { label: r.day || r.status || r.type, count: r.count }; }), "label", "count");
+  $("skillReport").innerHTML = barChart("Skills", "Skill name and how many times it appears in offers.", data.topSkills || [], "skill", "count");
+  $("cityReport").innerHTML = barChart("Cities", "City name and members active in the last 30 days.", data.activeCities || [], "city", "active_30d");
   if ((data.users || []).length) $("users").innerHTML = userTable(data.users);
   if ((data.exchanges || []).length) $("exchanges").innerHTML = offerTable(data.exchanges);
 }
@@ -323,7 +330,7 @@ async function loadStats() {
     stat("Pending offers", s.offers && s.offers.pending) +
     stat("Completed offers", s.offers && s.offers.completed);
   const charts = s.charts || {};
-  $("charts").innerHTML = lineChart("New members, 30 days", charts.signups || []) + lineChart("Offers, 30 days", charts.offers || []);
+  $("charts").innerHTML = barChart("New members, 30 days", "Date on the left, number of new accounts on the right.", charts.signups || [], "day", "count") + barChart("Offers", "Date or status on the left, count on the right.", (charts.offers || []).map(function(r){ return { label: r.day || r.status || r.type, count: r.count }; }), "label", "count");
   loadReport();
 }
 function chartBox(title, rows, labelKey, valueKey) {
