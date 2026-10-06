@@ -11,6 +11,18 @@ export class AuthController {
     private readonly notify: NotifyService,
   ) {}
 
+  @Get('alerts')
+  alerts(@Req() req: any) {
+    const userId = userIdFromRequest(req);
+    return this.authService.alerts(userId);
+  }
+
+  @Post('alerts/read')
+  readAlert(@Req() req: any, @Body() body: any) {
+    const userId = userIdFromRequest(req);
+    return this.authService.readAlert(userId, Number(body.id));
+  }
+
   @Get('me')
   me(@Req() req: any) {
     return this.authService.me(userIdFromRequest(req));
