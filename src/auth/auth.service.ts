@@ -120,12 +120,21 @@ export class AuthService {
       is_read BOOLEAN NOT NULL DEFAULT FALSE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`);
-    const rows = await db.query('SELECT id, title, body, is_read, created_at FROM user_alerts WHERE user_id = $1 ORDER BY id DESC LIMIT 50', [userId]);
+    await db.query(`ALTER TABLE user_alerts ADD COLUMN IF NOT EXISTS kind VARCHAR(40) DEFAULT 'info'`);
+    await db.query(`ALTER TABLE user_alerts ADD COLUMN IF NOT EXISTS ref_id INTEGER DEFAULT 0`);
+    await db.query(`ALTER TABLE user_alerts ADD COLUMN IF NOT EXISTS other_id INTEGER DEFAULT 0`);
+    await db.query(`ALTER TABLE user_alerts ADD COLUMN IF NOT EXISTS other_name VARCHAR(120) DEFAULT ''`);
+    const rows = await db.query('SELECT id, title, body, is_read, created_at, kind, ref_id, other_id, other_name FROM user_alerts WHERE user_id = $1 ORDER BY id DESC LIMIT 50', [userId]);
     return rows.rows;
   }
 
   async readAlert(userId: number, id: number) {
     await db.query('UPDATE user_alerts SET is_read = TRUE WHERE id = $1 AND user_id = $2', [id, userId]);
+    return { ok: true };
+  }
+
+  async deleteAlert(userId: number, id: number) {
+    await db.query('DELETE FROM user_alerts WHERE id = $1 AND user_id = $2', [id, userId]);
     return { ok: true };
   }
 

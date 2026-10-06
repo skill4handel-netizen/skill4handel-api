@@ -77,7 +77,7 @@ export class ChatService {
     await db.query(`ALTER TABLE exchange_offers ADD COLUMN IF NOT EXISTS location VARCHAR(255) DEFAULT ''`);
   }
 
-  private async alert(userId: number, title: string, body: string) {
+  private async alert(userId: number, title: string, body: string, kind = 'info', refId = 0, otherId = 0, otherName = '') {
     try {
       await db.query(`CREATE TABLE IF NOT EXISTS user_alerts (
         id SERIAL PRIMARY KEY,
@@ -87,8 +87,15 @@ export class ChatService {
         is_read BOOLEAN NOT NULL DEFAULT FALSE,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )`);
-      await db.query('INSERT INTO user_alerts (user_id, title, body) VALUES ($1, $2, $3)', [userId, title.slice(0, 160), body]);
-      await this.ping(userId, title, body, { type: 'alert' });
+      await db.query(`ALTER TABLE user_alerts ADD COLUMN IF NOT EXISTS kind VARCHAR(40) DEFAULT 'info'`);
+      await db.query(`ALTER TABLE user_alerts ADD COLUMN IF NOT EXISTS ref_id INTEGER DEFAULT 0`);
+      await db.query(`ALTER TABLE user_alerts ADD COLUMN IF NOT EXISTS other_id INTEGER DEFAULT 0`);
+      await db.query(`ALTER TABLE user_alerts ADD COLUMN IF NOT EXISTS other_name VARCHAR(120) DEFAULT ''`);
+      await db.query(
+        'INSERT INTO user_alerts (user_id, title, body, kind, ref_id, other_id, other_name) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+        [userId, title.slice(0, 160), body, kind, refId || 0, otherId || 0, String(otherName || '').slice(0, 120)],
+      );
+      await this.ping(userId, title, body, { type: kind });
     } catch (error) {
       console.log('ALERT SKIP', error);
     }
@@ -465,11 +472,9 @@ export class ChatService {
     const offerNote = (body.payWithTokens || tokens > 0)
       ? `Skill plus ${tokens} token(s).`
       : 'Skill exchange.';
-    await this.alert(
-      this.otherId(chat, userId),
-      isCounter ? 'Counter-offer received' : 'New offer received',
-      (isCounter ? 'A counter-offer is waiting. ' : 'An offer is waiting. ') + offerNote,
-    );
+    const other = this.otherId(chat, userId);
+    const otherName = Number(chat.user_a_id) === Number(userId) ? chat.name_b : chat.name_a;
+    await this.alert(other, isCounter ? 'Counter-offer received' : 'New offer received', (isCounter ? 'A counter-offer is waiting. ' : 'An offer is waiting. ') + offerNote, 'offer', chatId, userId, Number(chat.user_a_id) === Number(userId) ? chat.name_a : chat.name_b);
     return this.get(chatId, userId);
   }
 
@@ -509,14 +514,8 @@ export class ChatService {
     ]);
     const chat = (await db.query('SELECT * FROM chats WHERE id = $1', [chatId])).rows[0];
     if (chat) {
-      await this.ping(
-        Number(offer.proposed_by),
-        action === 'accepted' ? 'Offer accepted' : 'Offer declined',
-        action === 'accepted'
-          ? 'Your offer has been accepted.'
-          : 'Your offer has been declined.',
-        { type: 'offer', chatId: String(chatId) },
-      );
+      const senderName = Number(chat.user_a_id) === Number(userId) ? chat.name_a : chat.name_b;
+      await this.alert(Number(offer.proposed_by), action === 'accepted' ? 'Offer accepted' : 'Offer declined', action === 'accepted' ? 'Your offer has been accepted.' : 'Your offer has been declined.', 'offer', chatId, userId, senderName);
     }
     return this.get(chatId, userId);
   }
@@ -678,7 +677,7 @@ export class ChatService {
       ? `${mine || 'A member'} deleted the chat. The unanswered offer was cancelled.`
       : `${mine || 'A member'} deleted the chat. Messages in that chat were removed.`;
     try {
-      await this.alert(other, 'Chat deleted', note);
+      await this.alert(other, 'Chat deleted', note, 'deleted', 0, userId, mine);
     } catch (_) {}
     await db.query('DELETE FROM messages WHERE chat_id = $1', [chatId]);
     await db.query('DELETE FROM exchange_offers WHERE chat_id = $1', [chatId]);

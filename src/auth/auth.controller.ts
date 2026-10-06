@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Header, Post, Query, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, Param, Post, Query, Req } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { NotifyService } from '../notify/notify.service';
 import { userIdFromRequest } from './http-user';
@@ -21,6 +21,11 @@ export class AuthController {
   readAlert(@Req() req: any, @Body() body: any) {
     const userId = userIdFromRequest(req);
     return this.authService.readAlert(userId, Number(body.id));
+  }
+
+  @Delete('alerts/:id')
+  deleteAlert(@Req() req: any, @Param('id') id: string) {
+    return this.authService.deleteAlert(userIdFromRequest(req), Number(id));
   }
 
   @Get('me')
