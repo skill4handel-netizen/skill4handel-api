@@ -231,7 +231,108 @@ export class AdminService {
     };
   }
 
+
+  async chart(kind = 'members', query: Record<string, string> = {}) {
+    const from = (query.from || '').slice(0, 10);
+    const to = (query.to || '').slice(0, 10);
+    const city = (query.city || '').trim();
+    const skill = (query.skill || '').trim();
+    const status = (query.status || '').trim().toUpperCase();
+    const start = from || new Date(Date.now() - 29 * 864e5).toISOString().slice(0, 10);
+    const end = to || new Date().toISOString().slice(0, 10);
+    if (kind === 'skills') {
+      const rows = (await db.query(
+        `SELECT skill AS label, COUNT(*)::int AS count FROM (
+           SELECT NULLIF(TRIM(skill_requested), '') AS skill, created_at FROM exchange_offers
+           UNION ALL
+           SELECT NULLIF(TRIM(skill_offered), ''), created_at FROM exchange_offers
+         ) s
+         WHERE skill IS NOT NULL
+           AND created_at::date BETWEEN $1::date AND $2::date
+           AND ($3 = '' OR skill ILIKE '%' || $3 || '%')
+         GROUP BY skill
+         ORDER BY count DESC
+         LIMIT 20`,
+        [start, end, skill],
+      )).rows;
+      return { title: 'Skills', from: start, to: end, rows };
+    }
+    if (kind === 'cities') {
+      const rows = (await db.query(
+        `SELECT COALESCE(NULLIF(TRIM(city), ''), 'Unknown') AS label,
+                COUNT(*)::int AS count
+         FROM users
+         WHERE role <> 'admin'
+           AND created_at::date BETWEEN $1::date AND $2::date
+           AND ($3 = '' OR city ILIKE '%' || $3 || '%')
+         GROUP BY 1
+         ORDER BY count DESC
+         LIMIT 20`,
+        [start, end, city],
+      )).rows;
+      return { title: 'Cities', from: start, to: end, rows };
+    }
+    if (kind === 'tickets') {
+      const rows = (await db.query(
+        `SELECT to_char(d::date, 'YYYY-MM-DD') AS label,
+                COALESCE(COUNT(t.id), 0)::int AS count
+         FROM generate_series($1::date, $2::date, '1 day') d
+         LEFT JOIN tickets t ON t.created_at::date = d::date
+           AND ($3 = '' OR t.status = $3)
+         GROUP BY d
+         ORDER BY d`,
+        [start, end, status.toLowerCase()],
+      )).rows;
+      return { title: 'Tickets', from: start, to: end, rows };
+    }
+    if (kind === 'reviews') {
+      const rows = (await db.query(
+        `SELECT rating::text AS label, COUNT(*)::int AS count
+         FROM reviews
+         WHERE created_at::date BETWEEN $1::date AND $2::date
+         GROUP BY rating
+         ORDER BY rating`,
+        [start, end],
+      )).rows;
+      return { title: 'Reviews', from: start, to: end, rows };
+    }
+    if (kind === 'offers') {
+      const rows = (await db.query(
+        `SELECT to_char(d::date, 'YYYY-MM-DD') AS label,
+                COALESCE(COUNT(e.id), 0)::int AS count
+         FROM generate_series($1::date, $2::date, '1 day') d
+         LEFT JOIN exchange_offers e ON e.created_at::date = d::date
+           AND ($3 = '' OR e.status = $3)
+           AND ($4 = '' OR e.skill_requested ILIKE '%' || $4 || '%' OR e.skill_offered ILIKE '%' || $4 || '%')
+         LEFT JOIN chats c ON c.id = e.chat_id
+         LEFT JOIN users ua ON ua.id = c.user_a_id
+         LEFT JOIN users ub ON ub.id = c.user_b_id
+         WHERE $5 = '' OR ua.city ILIKE '%' || $5 || '%' OR ub.city ILIKE '%' || $5 || '%' OR e.id IS NULL
+         GROUP BY d
+         ORDER BY d`,
+        [start, end, status, skill, city],
+      )).rows;
+      return { title: 'Offers', from: start, to: end, rows };
+    }
+    const rows = (await db.query(
+      `SELECT to_char(d::date, 'YYYY-MM-DD') AS label,
+              COALESCE(COUNT(u.id), 0)::int AS count
+       FROM generate_series($1::date, $2::date, '1 day') d
+       LEFT JOIN users u ON u.created_at::date = d::date
+         AND u.role <> 'admin'
+         AND ($3 = '' OR u.city ILIKE '%' || $3 || '%')
+       GROUP BY d
+       ORDER BY d`,
+      [start, end, city],
+    )).rows;
+    return { title: 'Members', from: start, to: end, rows };
+  }
+
   async exportCsv(kind = 'users', query: Record<string, string> = {}) {
+    if (['members','offers','skills','cities','tickets','reviews'].includes(kind)) {
+      const chart = await this.chart(kind, query);
+      return toCsv(chart.rows);
+    }
     const report = await this.report(query);
     const rows = kind === 'exchanges' ? report.exchanges : kind === 'cities' ? report.activeCities : kind === 'skills' ? report.topSkills : report.users;
     return toCsv(rows);
