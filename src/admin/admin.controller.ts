@@ -17,61 +17,66 @@ export class AdminController {
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Skill4Handel Admin</title>
 <style>
-  :root { --navy:#102a43; --blue:#1f4e79; --gold:#c9a227; --bg:#e8eef5; --card:#fff; }
-  * { box-sizing: border-box; }
-  body { margin:0; font-family: Arial, sans-serif; background: var(--bg); color:#122; }
-  .login-wrap { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px;
-    background: linear-gradient(160deg, #102a43 0%, #1f4e79 55%, #e8eef5 55%); }
-  .login-card { width:min(420px,100%); background:#fff; border-radius:20px; padding:28px;
-    box-shadow: 0 16px 40px rgba(16,42,67,.25); }
-  .brand { text-align:center; margin-bottom:18px; }
-  .mark { width:64px; height:64px; border-radius:16px; margin:0 auto 10px; display:flex; align-items:center;
-    justify-content:center; background: var(--navy); color:#fff; font-weight:700; font-size:18px; }
-  .brand h1 { margin:0; font-size:22px; color:var(--navy); }
-  .brand p { margin:6px 0 0; color:#5b6b7c; font-size:13px; }
-  label { display:block; font-size:12px; color:#5b6b7c; margin:10px 0 4px; }
-  input, button, select, textarea { width:100%; padding:12px; border:1px solid #d5deea; border-radius:10px; font-size:14px; }
-  .row-btns { display:flex; gap:8px; margin-top:14px; }
-  button { cursor:pointer; border:0; }
+  :root { --navy:#102a43; --blue:#1f4e79; --gold:#c9a227; --bg:#f4f7fb; --line:#e4ebf3; --muted:#5d6d7e; --ok:#1f7a4d; --warn:#9a6700; --bad:#b42318; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:Segoe UI, Arial, sans-serif; background:var(--bg); color:#172033; }
+  button, input, select, textarea { font:inherit; }
+  .login-wrap { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; background:radial-gradient(circle at top left, #1f4e79, #102a43 55%); }
+  .login-card { width:min(440px,100%); background:#fff; border-radius:24px; padding:32px; box-shadow:0 24px 60px rgba(0,0,0,.25); }
+  .brand { text-align:center; }
+  .brand img { width:72px; height:72px; border-radius:18px; object-fit:cover; background:#fff; }
+  .brand h1 { margin:12px 0 4px; color:var(--navy); }
+  .brand p { margin:0; color:var(--muted); }
+  label { display:block; margin:14px 0 6px; color:var(--muted); font-size:13px; }
+  input, select, textarea { width:100%; padding:12px 14px; border:1px solid var(--line); border-radius:12px; background:#fff; }
+  .row-btns { display:flex; gap:8px; margin-top:16px; }
+  button { border:0; border-radius:12px; padding:11px 14px; cursor:pointer; }
   .primary { background:var(--navy); color:#fff; font-weight:700; }
   .ghost { background:#eef3f8; color:var(--navy); }
-  .error { min-height:20px; color:#b42318; font-size:13px; margin-top:10px; }
-  header { background:var(--navy); color:#fff; padding:16px 24px; display:flex; justify-content:space-between; align-items:center; }
-  header button { width:auto; background:#fff; color:var(--navy); padding:8px 12px; }
-  main { padding:20px; }
-  .card { background:var(--card); border-radius:12px; padding:16px; margin-bottom:16px; }
-  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; }
-  .stat { background:#f7f9fc; border-radius:10px; padding:12px; }
-  .stat b { display:block; font-size:22px; color:var(--navy); }
-  .charts { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; }
-  .chart-box h3 { margin:0 0 8px; font-size:13px; color:var(--navy); }
-  .charts { display:grid; grid-template-columns:1fr; gap:12px; }
-  .line-chart { width:100%; height:180px; }
-  .filters { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:8px; margin-bottom:12px; }
-  .filters button, .filters a.btn { width:auto; }
-  .vcol { flex:1; display:flex; flex-direction:column; align-items:center; height:100%; justify-content:flex-end; }
-  .vbar { width:100%; max-width:28px; background:var(--blue); border-radius:6px 6px 0 0; min-height:4px; }
-  .vcol .val { font-size:11px; font-weight:700; margin-bottom:4px; }
-  .vcol .label { font-size:10px; color:#5b6b7c; margin-top:4px; text-align:center; line-height:1.2; word-break:break-word; }
-  .logo { width:40px; height:40px; object-fit:contain; border-radius:8px; background:#fff; }
-  header .brand-row { display:flex; align-items:center; gap:10px; }
+  .danger { background:#fff1f0; color:var(--bad); }
+  .error { min-height:22px; color:var(--bad); margin-top:10px; }
+  .shell { display:grid; grid-template-columns:240px 1fr; min-height:100vh; }
+  aside { background:var(--navy); color:#fff; padding:22px 16px; }
+  aside img { width:42px; height:42px; border-radius:12px; background:#fff; object-fit:cover; }
+  aside h1 { font-size:18px; margin:12px 0 4px; }
+  aside p { margin:0 0 22px; color:#c9d7e6; font-size:13px; }
+  .tabs { display:flex; flex-direction:column; gap:8px; }
+  .tabs button { text-align:left; background:transparent; color:#d7e3ef; }
+  .tabs button.on { background:#fff; color:var(--navy); }
+  main { padding:24px; }
+  header { display:flex; justify-content:space-between; gap:12px; align-items:center; margin-bottom:18px; }
+  header h2 { margin:0; }
+  header p { margin:4px 0 0; color:var(--muted); }
+  .actions { display:flex; gap:8px; }
+  .actions button { width:auto; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:16px; }
+  .stat, .card { background:#fff; border:1px solid var(--line); border-radius:18px; padding:16px; }
+  .stat b { display:block; font-size:28px; color:var(--navy); }
+  .stat span { color:var(--muted); font-size:13px; }
+  .filters { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:8px; margin:12px 0; }
+  .filters button { width:auto; }
   table { width:100%; border-collapse:collapse; font-size:14px; }
-  th, td { border-bottom:1px solid #eee; padding:8px; text-align:left; vertical-align:top; }
+  th { text-align:left; color:var(--muted); font-size:12px; letter-spacing:.04em; text-transform:uppercase; }
+  th, td { border-bottom:1px solid var(--line); padding:10px 8px; vertical-align:top; }
+  .badge { display:inline-block; border-radius:999px; padding:3px 8px; font-size:12px; font-weight:700; background:#eef3f8; color:var(--navy); }
+  .badge.ok { background:#e8f6ee; color:var(--ok); }
+  .badge.warn { background:#fff7e6; color:var(--warn); }
+  .badge.bad { background:#fff1f0; color:var(--bad); }
   .hide { display:none; }
-  .tabs button { width:auto; background:#d9e2ef; color:var(--navy); }
-  .tabs button.on { background:var(--navy); color:#fff; }
-  dialog { border:0; border-radius:12px; padding:20px; width:min(720px,92vw); }
-  pre { white-space:pre-wrap; background:#f6f7fb; padding:12px; border-radius:8px; }
-  #app input, #app button, #app select, #app textarea { width:auto; }
+  dialog { border:0; border-radius:18px; padding:22px; width:min(760px,94vw); }
+  pre { white-space:pre-wrap; background:#f6f8fb; padding:12px; border-radius:12px; }
+  .chart-box h3 { margin:0 0 8px; }
+  .line-chart { width:100%; height:180px; }
+  @media (max-width:860px) { .shell { grid-template-columns:1fr; } aside { padding-bottom:8px; } .tabs { flex-direction:row; overflow:auto; } }
 </style>
 </head>
 <body>
 <div id="login" class="login-wrap">
   <div class="login-card">
     <div class="brand">
-      <img class="logo" src="https://www.skill4handel.com/logo.jpg" alt="Skill4Handel" style="width:72px;height:72px;margin:0 auto 10px;display:block;border-radius:16px;object-fit:contain;background:#fff" />
-      <h1>Skill4Handel Admin</h1>
-      <p>Support, members and exchanges</p>
+      <img src="https://www.skill4handel.com/logo.jpg" alt="Skill4Handel" />
+      <h1>Skill4Handel</h1>
+      <p>Operations panel for members, exchanges and support.</p>
     </div>
     <div id="loginForm">
       <label>Email</label>
@@ -80,89 +85,100 @@ export class AdminController {
       <input id="password" type="password" autocomplete="current-password" placeholder="Password" />
       <div class="row-btns">
         <button id="loginBtn" class="primary" type="button">Sign in</button>
-        <button id="forgotBtn" class="ghost" type="button">Forgot password</button>
+        <button id="forgotBtn" class="ghost" type="button">Reset password</button>
       </div>
-      <p id="error" class="error"></p>
+      <div id="error" class="error"></div>
     </div>
   </div>
 </div>
-<div id="app" class="hide">
-  <header>
-    <div class="brand-row">
-      <img class="logo" src="https://www.skill4handel.com/logo.jpg" alt="Skill4Handel" />
-      <h1 style="margin:0;font-size:20px">Skill4Handel Admin</h1>
-    </div>
-    <div>
-      <button id="refreshBtn" type="button">Refresh</button>
-      <button id="logoutBtn" type="button">Logout</button>
-    </div>
-  </header>
-  <main>
-    <div class="card grid" id="stats"></div>
-    <div class="card">
-      <h2>Reports</h2>
-      <div class="filters">
-        <input id="fCity" placeholder="City" />
-        <input id="fSkill" placeholder="Skill" />
-        <select id="fStatus"><option value="">Any offer status</option><option>PROPOSED</option><option>COUNTERED</option><option>ACCEPTED</option><option>CANCELLED</option><option>SETTLED</option><option>REVIEWED</option></select>
-        <select id="fRole"><option value="">Any role</option><option value="member">member</option></select>
-        <button class="primary" onclick="loadReport()">Filter</button>
-        <button class="ghost" onclick="downloadCsv('users')">Export users</button>
-        <button class="ghost" onclick="downloadCsv('exchanges')">Export exchanges</button>
-        <button class="ghost" onclick="downloadCsv('skills')">Export skills</button>
-        <button class="ghost" onclick="downloadCsv('cities')">Export cities</button>
-      </div>
-      <div class="charts" id="charts"></div>
-      <h3>Most requested skills</h3><div id="skillReport"></div>
-      <h3>Cities by activity</h3><div id="cityReport"></div>
-    </div>
-    <div class="card tabs">
-      <button type="button" data-tab="tickets" class="on">Tickets</button>
-      <button type="button" data-tab="users">Users</button>
+<div id="app" class="shell hide">
+  <aside>
+    <img src="https://www.skill4handel.com/logo.jpg" alt="" />
+    <h1>Admin</h1>
+    <p>Live overview of the exchange.</p>
+    <div class="tabs">
+      <button type="button" data-tab="overview" class="on">Overview</button>
+      <button type="button" data-tab="tickets">Support</button>
+      <button type="button" data-tab="users">Members</button>
       <button type="button" data-tab="exchanges">Exchanges</button>
       <button type="button" data-tab="reviews">Reviews</button>
     </div>
-    <div id="tab-tickets" class="card">
-      <h2>Tickets</h2>
-      <select id="ticketFilter">
-        <option value="">All</option>
-        <option value="open">Open</option>
-        <option value="closed">Closed</option>
-      </select>
-      <div id="tickets"></div>
+  </aside>
+  <main>
+    <header>
+      <div>
+        <h2 id="pageTitle">Overview</h2>
+        <p id="pageHint">Members, open sessions, support and reviews.</p>
+      </div>
+      <div class="actions">
+        <button id="refreshBtn" class="ghost" type="button">Refresh</button>
+        <button id="logoutBtn" class="danger" type="button">Sign out</button>
+      </div>
+    </header>
+    <div id="tab-overview">
+      <div class="grid" id="stats"></div>
+      <div class="card">
+        <h3>Reports</h3>
+        <div class="filters">
+          <input id="fCity" placeholder="City" />
+          <input id="fSkill" placeholder="Skill" />
+          <select id="fStatus"><option value="">Any offer status</option><option>PROPOSED</option><option>COUNTERED</option><option>ACCEPTED</option><option>CANCELLED</option><option>SETTLED</option><option>REVIEWED</option></select>
+          <select id="fRole"><option value="">Any role</option><option value="user">Member</option><option value="admin">Admin</option></select>
+          <button class="primary" type="button" onclick="loadReport()">Apply filters</button>
+          <button class="ghost" type="button" onclick="downloadCsv('users')">Export members</button>
+          <button class="ghost" type="button" onclick="downloadCsv('exchanges')">Export exchanges</button>
+          <button class="ghost" type="button" onclick="downloadCsv('skills')">Export skills</button>
+          <button class="ghost" type="button" onclick="downloadCsv('cities')">Export cities</button>
+        </div>
+        <div class="charts" id="charts"></div>
+        <h3>Most requested skills</h3><div id="skillReport"></div>
+        <h3>Cities by activity</h3><div id="cityReport"></div>
+      </div>
     </div>
-    <div id="tab-users" class="card hide">
-      <h2>Users</h2>
-      <input id="userQuery" placeholder="Search name, email or city" />
-      <button id="searchBtn" type="button">Search</button>
-      <div id="users"></div>
-      <div id="userDetail"></div>
+    <div id="tab-tickets" class="hide">
+      <div class="card">
+        <h3>Support tickets</h3>
+        <p>Open a ticket to read the full text and save a reply.</p>
+        <select id="ticketFilter"><option value="">All</option><option value="open">Open</option><option value="closed">Closed</option></select>
+        <div id="tickets"></div>
+      </div>
     </div>
-    <div id="tab-reviews" class="card hide">
-      <h2>Reviews</h2>
-      <div id="reviews"></div>
+    <div id="tab-users" class="hide">
+      <div class="card">
+        <h3>Members</h3>
+        <p>Open a name to see account dates, activity, role and wallet.</p>
+        <div class="filters">
+          <input id="userQuery" placeholder="Search name, email or city" />
+          <button id="searchBtn" class="primary" type="button">Search</button>
+        </div>
+        <div id="users"></div>
+        <div id="userDetail"></div>
+      </div>
     </div>
-    <div id="tab-exchanges" class="card hide">
-      <h2>Exchanges</h2>
-      <select id="offerFilter">
-        <option value="">All</option>
-        <option value="PROPOSED">Proposed</option>
-        <option value="COUNTERED">Countered</option>
-        <option value="ACCEPTED">Accepted</option>
-        <option value="CANCELLED">Cancelled</option>
-        <option value="SETTLED">Settled</option>
-      </select>
-      <div id="exchanges"></div>
+    <div id="tab-exchanges" class="hide">
+      <div class="card">
+        <h3>Exchanges</h3>
+        <p>Accepted sessions stay open until both members mark them done.</p>
+        <select id="offerFilter"><option value="">All</option><option value="PROPOSED">Waiting for a reply</option><option value="COUNTERED">Counter-offer</option><option value="ACCEPTED">Accepted, not finished</option><option value="CANCELLED">Cancelled</option><option value="SETTLED">Finished</option><option value="REVIEWED">Reviewed</option></select>
+        <div id="exchanges"></div>
+      </div>
+    </div>
+    <div id="tab-reviews" class="hide">
+      <div class="card">
+        <h3>Reviews</h3>
+        <p>Reviews appear only after both members confirm a finished exchange.</p>
+        <div id="reviews"></div>
+      </div>
     </div>
   </main>
 </div>
 <dialog id="ticketBox">
   <h2 id="ticketTitle">Ticket</h2>
   <pre id="ticketBody"></pre>
-  <textarea id="ticketReply" rows="4" style="width:100%" placeholder="Admin reply"></textarea>
-  <div>
-    <button id="replyBtn" type="button">Save reply and close</button>
-    <button id="closeBoxBtn" type="button">Close</button>
+  <textarea id="ticketReply" rows="4" placeholder="Reply to the member"></textarea>
+  <div class="row-btns">
+    <button id="replyBtn" class="primary" type="button">Save reply and close</button>
+    <button id="closeBoxBtn" class="ghost" type="button">Close</button>
   </div>
 </dialog>
 <script>
@@ -172,12 +188,15 @@ function token() { return localStorage.getItem("adminToken") || ""; }
 function headers() { return { Authorization: "Bearer " + token(), "Content-Type": "application/json" }; }
 function $(id) { return document.getElementById(id); }
 function showTab(name) {
-  ["tickets","users","exchanges"].forEach(function(id) {
-    $("tab-" + id).className = "card" + (id === name ? "" : " hide");
+  ["overview","tickets","users","exchanges","reviews"].forEach(function(id) {
+    var el = $("tab-" + id);
+    if (el) el.className = id === name ? "" : "hide";
   });
   document.querySelectorAll(".tabs button").forEach(function(el) {
     el.className = el.getAttribute("data-tab") === name ? "on" : "";
   });
+  var titles = { overview:"Overview", tickets:"Support", users:"Members", exchanges:"Exchanges", reviews:"Reviews" };
+  if ($("pageTitle")) $("pageTitle").textContent = titles[name] || "Admin";
 }
 async function login() {
   if ($("error")) $("error").textContent = "Signing in...";
@@ -319,7 +338,7 @@ function chartBox(title, rows, labelKey, valueKey) {
   }).join("") + "</div></div>";
 }
 function stat(label, value) {
-  return "<div class=stat><b>" + (value == null ? "-" : value) + "</b>" + label + "</div>";
+  return "<div class=stat><b>" + (value == null ? "-" : value) + "</b><span>" + label + "</span></div>";
 }
 async function loadTickets() {
   const status = $("ticketFilter").value;
