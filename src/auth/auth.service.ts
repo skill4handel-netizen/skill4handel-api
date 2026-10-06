@@ -111,6 +111,24 @@ export class AuthService {
     return this.publicUser(user, await this.reviewsOf(user.id), await this.historyOf(user.id));
   }
 
+  async alerts(userId: number) {
+    await db.query(`CREATE TABLE IF NOT EXISTS user_alerts (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      title VARCHAR(160) NOT NULL,
+      body TEXT NOT NULL,
+      is_read BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+    const rows = await db.query('SELECT id, title, body, is_read, created_at FROM user_alerts WHERE user_id = $1 ORDER BY id DESC LIMIT 50', [userId]);
+    return rows.rows;
+  }
+
+  async readAlert(userId: number, id: number) {
+    await db.query('UPDATE user_alerts SET is_read = TRUE WHERE id = $1 AND user_id = $2', [id, userId]);
+    return { ok: true };
+  }
+
   async me(userId: number) {
     const result = await db.query('SELECT * FROM users WHERE id = $1', [userId]);
     const user = result.rows[0];

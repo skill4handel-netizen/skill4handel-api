@@ -69,6 +69,31 @@ export class ChatService {
     };
   }
 
+
+  private async ensureOfferColumns() {
+    await db.query(`ALTER TABLE exchange_offers ADD COLUMN IF NOT EXISTS pay_with_tokens BOOLEAN DEFAULT FALSE`);
+    await db.query(`ALTER TABLE exchange_offers ADD COLUMN IF NOT EXISTS extra_tokens INTEGER DEFAULT 0`);
+    await db.query(`ALTER TABLE exchange_offers ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMPTZ`);
+    await db.query(`ALTER TABLE exchange_offers ADD COLUMN IF NOT EXISTS location VARCHAR(255) DEFAULT ''`);
+  }
+
+  private async alert(userId: number, title: string, body: string) {
+    try {
+      await db.query(`CREATE TABLE IF NOT EXISTS user_alerts (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        title VARCHAR(160) NOT NULL,
+        body TEXT NOT NULL,
+        is_read BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )`);
+      await db.query('INSERT INTO user_alerts (user_id, title, body) VALUES ($1, $2, $3)', [userId, title.slice(0, 160), body]);
+      await this.ping(userId, title, body, { type: 'alert' });
+    } catch (error) {
+      console.log('ALERT SKIP', error);
+    }
+  }
+
   private async ping(userId: number, title: string, body: string, data: Record<string, string> = {}) {
     try {
       const lang = await this.langOf(userId);
@@ -408,18 +433,28 @@ export class ChatService {
     if (!existing) await this.assertSwapLimit(chat.user_a_id, chat.user_b_id);
     const tokens = Math.min(10, Math.max(0, Number(body.extraTokens) || 0));
     const isCounter = !!existing;
-    const requested = isCounter ? existing.skillRequested : body.skillRequested;
+    const requested = String(isCounter ? existing.skillRequested : body.skillRequested || '').slice(0, 250);
+    const offered = String(body.volunteer ? '' : body.skillOffered || '').slice(0, 250);
+    if ((body.payWithTokens || tokens > 0) && tokens <= 0) {
+      throw new BadRequestException('Enter the number of tokens for this exchange');
+    }
+    await this.ensureOfferColumns();
+    try {
     await db.query(
       `INSERT INTO exchange_offers
         (chat_id, proposed_by, skill_requested, skill_offered, pay_with_tokens, extra_tokens, duration, level, mode, location, scheduled_at, status)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
       [
-        chatId, userId, requested, body.volunteer ? '' : body.skillOffered || '',
-        !!body.payWithTokens || tokens > 0, tokens, body.duration,
-        body.volunteer ? 'Volunteer' : body.level, body.mode, body.location || '',
+        chatId, userId, requested, offered,
+        !!body.payWithTokens || tokens > 0, tokens, String(body.duration || '60').slice(0, 10),
+        String(body.volunteer ? 'Volunteer' : body.level || 'basic').slice(0, 20), String(body.mode || 'online').slice(0, 20), String(body.location || '').slice(0, 250),
         scheduledAt, isCounter ? 'COUNTERED' : 'PROPOSED',
       ],
     );
+    } catch (error) {
+      console.log('OFFER INSERT', error);
+      throw new BadRequestException('The offer could not be saved. Check the skill, token amount and time, then try again.');
+    }
     await db.query(`INSERT INTO messages (chat_id, from_id, type, text) VALUES ($1, $2, 'text', $3)`, [
       chatId, userId,
       isCounter ? 'A counter-offer has been sent.' : 'An offer has been sent. If there is no response within 24 hours, it will be cancelled.',
@@ -427,13 +462,13 @@ export class ChatService {
     await db.query('UPDATE chats SET last_message = $1, last_from_id = $2, updated_at = NOW() WHERE id = $3', [
       isCounter ? 'Counter offer' : 'New swap offer', userId, chatId,
     ]);
-    await this.ping(
+    const offerNote = (body.payWithTokens || tokens > 0)
+      ? `Skill plus ${tokens} token(s).`
+      : 'Skill exchange.';
+    await this.alert(
       this.otherId(chat, userId),
       isCounter ? 'Counter-offer received' : 'New offer received',
-      isCounter
-        ? 'A counter-offer is waiting for your response.'
-        : 'A skill exchange offer is waiting for your response.',
-      { type: 'offer', chatId: String(chatId) },
+      (isCounter ? 'A counter-offer is waiting. ' : 'An offer is waiting. ') + offerNote,
     );
     return this.get(chatId, userId);
   }
@@ -643,7 +678,7 @@ export class ChatService {
       ? `${mine || 'A member'} deleted the chat. The unanswered offer was cancelled.`
       : `${mine || 'A member'} deleted the chat. Messages in that chat were removed.`;
     try {
-      await this.ping(other, 'Chat deleted', note, { type: 'chat' });
+      await this.alert(other, 'Chat deleted', note);
     } catch (_) {}
     await db.query('DELETE FROM messages WHERE chat_id = $1', [chatId]);
     await db.query('DELETE FROM exchange_offers WHERE chat_id = $1', [chatId]);
