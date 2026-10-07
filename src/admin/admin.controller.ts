@@ -40,6 +40,9 @@ export class AdminController {
   main { padding:22px; }
   header { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
   .kpis { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:16px; }
+  .kpi { display:flex; flex-direction:column; align-items:flex-start; gap:8px; min-height:92px; cursor:pointer; text-align:left; }
+  .kpi span { color:var(--muted); }
+  .kpi b { font-size:28px; line-height:1; }
   .kpi b { display:block; font-size:26px; margin-top:6px; }
   .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:10px 0; }
   .row input, .row select, .row button { width:auto; }
@@ -92,11 +95,11 @@ export class AdminController {
     </section>
     <section id="tab-members" class="hide">
       <div class="card">
-        <div class="row"><input id="userQuery" placeholder="Search name, email or city" /><button id="searchBtn" class="primary" type="button">Search</button><button id="exportUsers" type="button">Export Excel</button></div>
+        <div class="row"><input id="userQuery" placeholder="Search name, email or city" /><select id="memberFilter"><option value="">All members</option><option value="verified">Verified</option><option value="unverified">Unverified</option><option value="suspended">Suspended</option><option value="admin">Admins</option></select><button id="searchBtn" class="primary" type="button">Search</button><button id="exportUsers" type="button">Export Excel</button></div>
         <div id="users"></div>
       </div>
     </section>
-    <section id="tab-exchanges" class="hide"><div class="card"><div class="row"><select id="offerFilter"><option value="">All statuses</option><option>PROPOSED</option><option>COUNTERED</option><option>ACCEPTED</option><option>CANCELLED</option><option>SETTLED</option><option>REVIEWED</option></select><button id="exportExchanges" type="button">Export Excel</button></div><div id="exchanges"></div></div></section>
+    <section id="tab-exchanges" class="hide"><div class="card"><div class="row"><select id="offerFilter"><option value="">All statuses</option><option value="pending">Pending</option><option>PROPOSED</option><option>COUNTERED</option><option>ACCEPTED</option><option>CANCELLED</option><option value="completed">Completed</option><option>SETTLED</option><option>REVIEWED</option></select><button id="exportExchanges" type="button">Export Excel</button></div><div id="exchanges"></div></div></section>
     <section id="tab-tickets" class="hide"><div class="card"><div class="row"><select id="ticketFilter"><option value="">All</option><option value="open">Open</option><option value="closed">Closed</option></select></div><div id="tickets"></div></div></section>
     <section id="tab-reviews" class="hide"><div class="card" id="reviews"></div></section>
     <section id="tab-activity" class="hide"><div class="card"><div class="row"><input id="actFrom" type="date" /><input id="actTo" type="date" /><select id="actKind"><option value="">All events</option><option value="signup">Signups</option><option value="offer">Offers</option><option value="message">Messages</option><option value="review">Reviews</option><option value="ticket">Tickets</option><option value="wallet">Wallet</option><option value="admin">Admin changes</option></select><button id="actBtn" class="primary" type="button">Show</button><button id="actExport" type="button">Export Excel</button></div><div id="activity"></div></div></section>
@@ -167,13 +170,32 @@ function bars(rows){
 async function loadOverview(){
   const s = await api("/admin/stats"); if(!s) return;
   const u = s.users||{}, t = s.tickets||{}, o = s.offers||{};
-  $("kpis").innerHTML = [["Members",u.total],["Verified",u.verified],["Suspended",u.suspended],["Open tickets",t.open],["Pending offers",o.pending],["Accepted",o.accepted],["Completed",o.completed],["Admins",u.admins]].map(function(item){return "<div class='card'><span class='muted'>"+item[0]+"</span><b>"+(item[1]||0)+"</b></div>";}).join("");
+  $("kpis").innerHTML = [
+    ["Members", u.total, "members", ""],
+    ["Verified", u.verified, "members", "verified"],
+    ["Suspended", u.suspended, "members", "suspended"],
+    ["Open tickets", t.open, "tickets", "open"],
+    ["Pending offers", o.pending, "exchanges", "pending"],
+    ["Accepted", o.accepted, "exchanges", "ACCEPTED"],
+    ["Completed", o.completed, "exchanges", "completed"],
+    ["Admins", u.admins, "members", "admin"]
+  ].map(function(item){
+    return "<button class='card kpi' data-jump='"+item[2]+"' data-filter='"+item[3]+"' type='button'><span>"+item[0]+"</span><b>"+(item[1]||0)+"</b></button>";
+  }).join("");
   const c = s.charts||{};
   $("overviewCharts").innerHTML = "<h3>New members</h3>"+bars((c.signups||[]).map(r=>({label:r.day,count:r.count})))+"<h3>Offers by status</h3>"+bars((c.offers||[]).map(r=>({label:r.status,count:r.count})));
 }
 async function loadUsers(){
   const rows = await api("/admin/users?q="+encodeURIComponent($("userQuery").value||"")); if(!rows) return;
-  $("users").innerHTML = !rows.length ? "<p>No members.</p>" : "<table><tr><th>Name</th><th>Email</th><th>City</th><th>Balance</th><th>Status</th><th>Actions</th></tr>"+rows.map(function(row){
+  const filter = $("memberFilter").value;
+  const shown = rows.filter(function(row){
+    if(filter==="verified") return row.email_verified;
+    if(filter==="unverified") return !row.email_verified;
+    if(filter==="suspended") return row.is_suspended;
+    if(filter==="admin") return row.role==="admin";
+    return true;
+  });
+  $("users").innerHTML = !shown.length ? "<p>No members.</p>" : "<table><tr><th>Name</th><th>Email</th><th>City</th><th>Balance</th><th>Status</th><th>Actions</th></tr>"+shown.map(function(row){
     const role = row.role==="admin" ? "<button data-role-user='"+row.id+"'>Make member</button>" : "<button data-role-admin='"+row.id+"'>Make admin</button>";
     const sus = row.is_suspended ? "<button data-unsuspend='"+row.id+"'>Unsuspend</button>" : "<button data-suspend='"+row.id+"'>Suspend</button>";
     return "<tr><td><button data-open-user='"+row.id+"'>"+esc(row.name)+"</button></td><td>"+esc(row.email)+"</td><td>"+esc(row.city)+"</td><td>"+esc(row.balance)+"</td><td><span class='badge "+(row.is_suspended?"red":"green")+"'>"+esc(row.role)+(row.is_suspended?" suspended":"")+(row.email_verified?"":" unverified")+"</span></td><td>"+role+" "+sus+" <button data-verify='"+row.id+"'>Verify</button> <button data-password='"+row.id+"'>Password</button> <button data-wallet='"+row.id+"'>Wallet</button> "+(row.role==="admin"?"":"<button class='danger' data-delete-user='"+row.id+"'>Delete</button>")+"</td></tr>";
@@ -191,7 +213,11 @@ async function openUser(id){
   $("userBox").showModal();
 }
 async function loadExchanges(){
-  const rows = await api("/admin/exchanges?status="+$("offerFilter").value); if(!rows) return;
+  const wanted = $("offerFilter").value;
+  const status = wanted==="pending" || wanted==="completed" ? "" : wanted;
+  let rows = await api("/admin/exchanges?status="+status); if(!rows) return;
+  if(wanted==="pending") rows = rows.filter(function(row){ return row.status==="PROPOSED" || row.status==="COUNTERED"; });
+  if(wanted==="completed") rows = rows.filter(function(row){ return row.status==="SETTLED" || row.status==="REVIEWED"; });
   $("exchanges").innerHTML = !rows.length ? "<p>No exchanges.</p>" : "<table><tr><th>Members</th><th>Requested</th><th>Offered</th><th>Tokens</th><th>Status</th><th>When</th><th></th></tr>"+rows.map(r=>"<tr><td>"+esc(r.name_a)+" / "+esc(r.name_b)+"</td><td>"+esc(r.skill_requested)+"</td><td>"+esc(r.skill_offered)+"</td><td>"+esc(r.extra_tokens)+"</td><td><span class='badge'>"+esc(r.status)+"</span></td><td>"+when(r.created_at)+"</td><td><button class='danger' data-cancel-offer='"+r.id+"'>Cancel</button></td></tr>").join("")+"</table>";
 }
 async function loadTickets(){
@@ -218,7 +244,14 @@ document.addEventListener("click", async function(event){
   if(t.id==="loginBtn") return login();
   if(t.id==="forgotBtn") return fetch("/admin/recover",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:$("email").value.trim()})}).then(()=>{$("error").textContent="Reset requested.";});
   if(t.id==="logoutBtn"){ localStorage.removeItem("adminToken"); location.reload(); }
-  if(t.getAttribute("data-tab")) return show(t.getAttribute("data-tab"));
+  if(t.getAttribute("data-jump")){
+    const tab = t.getAttribute("data-jump");
+    const filter = t.getAttribute("data-filter") || "";
+    if(tab==="members") $("memberFilter").value = filter;
+    if(tab==="exchanges") $("offerFilter").value = filter;
+    if(tab==="tickets") $("ticketFilter").value = filter;
+    return show(tab);
+  }
   if(t.id==="searchBtn") return loadUsers();
   if(t.id==="exportUsers") return download("users");
   if(t.id==="exportExchanges") return download("exchanges");
