@@ -24,7 +24,7 @@ export class AdminController {
   .login { min-height:100vh; display:flex; align-items:center; justify-content:center; background:linear-gradient(160deg,#102a43,#1f4e79); }
   .card { background:#fff; border:1px solid var(--line); border-radius:16px; padding:16px; box-shadow:0 8px 24px rgba(16,42,67,.04); }
   .login .card { width:min(420px,92vw); }
-  h1 { margin:0 0 4px; font-size:22px; }
+  .logo { width:72px; height:72px; object-fit:cover; border-radius:16px; display:block; margin-bottom:10px; background:#fff; }
   .muted { color:var(--muted); }
   label { display:block; margin:12px 0 4px; color:var(--muted); font-size:12px; }
   input, select, textarea { width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:#fff; }
@@ -61,6 +61,7 @@ export class AdminController {
 <body>
 <div id="login" class="login">
   <div class="card">
+    <img class="logo" src="https://raw.githubusercontent.com/skill4handel-netizen/skill4handel-app/main/assets/logo.jpg" alt="Skill4Handel" />
     <h1>Skill4Handel</h1>
     <p class="muted">Administration</p>
     <label>Email</label><input id="email" type="email" />
@@ -71,6 +72,7 @@ export class AdminController {
 </div>
 <div id="app" class="shell hide">
   <aside>
+    <img class="logo" src="https://raw.githubusercontent.com/skill4handel-netizen/skill4handel-app/main/assets/logo.jpg" alt="Skill4Handel" />
     <strong>Skill4Handel Admin</strong>
     <nav>
       <button data-tab="overview" class="on" type="button">Overview</button>
@@ -83,7 +85,7 @@ export class AdminController {
     </nav>
   </aside>
   <main>
-    <header><div><h1 id="title">Overview</h1><div class="muted">All member, exchange, ticket and wallet actions stay available.</div></div><button id="logoutBtn" type="button">Sign out</button></header>
+    <header><div style="display:flex;gap:12px;align-items:center"><img class="logo" src="https://raw.githubusercontent.com/skill4handel-netizen/skill4handel-app/main/assets/logo.jpg" alt="Skill4Handel" /><div><h1 id="title">Overview</h1><div class="muted">All member, exchange, ticket and wallet actions stay available.</div></div></div><button id="logoutBtn" type="button">Sign out</button></header>
     <section id="tab-overview">
       <div class="kpis" id="kpis"></div>
       <div class="card" id="overviewCharts"></div>
@@ -202,7 +204,7 @@ async function loadReviews(){
 }
 async function loadActivity(){
   const q = new URLSearchParams({kind:$("actKind").value, from:$("actFrom").value, to:$("actTo").value});
-  const rows = await api("/admin/events?"+q.toString()); if(!rows) return;
+  const rows = await api("/admin/events?"+q.toString()); if(!Array.isArray(rows)){ $("activity").innerHTML="<p>Activity could not be loaded.</p>"; return; }
   $("activity").innerHTML = !rows.length ? "<p>No events in this filter.</p>" : "<table><tr><th>When</th><th>Type</th><th>Who</th><th>Detail</th></tr>"+rows.map(r=>"<tr><td>"+when(r.when)+"</td><td><span class='badge'>"+esc(r.type)+"</span></td><td>"+esc(r.who)+"</td><td>"+esc(r.detail)+"</td></tr>").join("")+"</table>";
 }
 async function loadChart(){
