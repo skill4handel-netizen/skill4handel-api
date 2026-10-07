@@ -252,6 +252,7 @@ document.addEventListener("click", async function(event){
     if(tab==="tickets") $("ticketFilter").value = filter;
     return show(tab);
   }
+  if(t.getAttribute("data-tab")) return show(t.getAttribute("data-tab"));
   if(t.id==="searchBtn") return loadUsers();
   if(t.id==="exportUsers") return download("users");
   if(t.id==="exportExchanges") return download("exchanges");
