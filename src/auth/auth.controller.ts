@@ -191,6 +191,11 @@ export class AuthController {
     return this.authService.addTicket({ ...body, userId: userIdFromRequest(req) });
   }
 
+  @Get('tickets')
+  tickets(@Req() req: any) {
+    return this.authService.listTickets(userIdFromRequest(req));
+  }
+
   @Get('blocks')
   blocks(@Req() req: any) {
     return this.authService.listBlocks(userIdFromRequest(req));

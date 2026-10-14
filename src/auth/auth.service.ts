@@ -473,6 +473,23 @@ export class AuthService {
     return { ok: true };
   }
 
+  async listTickets(userId: number) {
+    await db.query(`ALTER TABLE tickets ADD COLUMN IF NOT EXISTS admin_reply TEXT`);
+    const rows = await db.query(
+      `SELECT id, type, text, status, admin_reply, created_at
+       FROM tickets WHERE user_id = $1 ORDER BY id DESC LIMIT 30`,
+      [userId],
+    );
+    return rows.rows.map((row: any) => ({
+      id: row.id,
+      type: row.type,
+      text: row.text,
+      status: row.status || 'open',
+      adminReply: row.admin_reply || '',
+      createdAt: row.created_at,
+    }));
+  }
+
   async block(userId: number, otherId: number) {
     if (!userId || !otherId || userId === otherId) throw new BadRequestException('Invalid block');
     await db.query(

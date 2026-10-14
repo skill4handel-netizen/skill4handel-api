@@ -628,7 +628,7 @@ export class AdminService {
     const note = String(text || '').trim();
     if (!note) throw new BadRequestException('Reply text is required');
     await db.query(`ALTER TABLE tickets ADD COLUMN IF NOT EXISTS admin_reply TEXT`);
-    const current = (await db.query('SELECT text FROM tickets WHERE id = $1', [id])).rows[0];
+    const current = (await db.query('SELECT user_id, text FROM tickets WHERE id = $1', [id])).rows[0];
     if (!current) throw new UnauthorizedException('Ticket not found');
     const stamp = new Date().toISOString();
     const replyLine = `\n\n[Admin ${stamp}]\n${note}`;
@@ -636,6 +636,20 @@ export class AdminService {
       `UPDATE tickets SET admin_reply = COALESCE(admin_reply, '') || $1, status = 'closed' WHERE id = $2`,
       [replyLine, id],
     );
+    try {
+      await db.query(`CREATE TABLE IF NOT EXISTS user_alerts (
+        id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL, title VARCHAR(160) NOT NULL,
+        body TEXT NOT NULL, is_read BOOLEAN NOT NULL DEFAULT FALSE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )`);
+      await db.query(`ALTER TABLE user_alerts ADD COLUMN IF NOT EXISTS kind VARCHAR(40) DEFAULT 'info'`);
+      await db.query(`ALTER TABLE user_alerts ADD COLUMN IF NOT EXISTS ref_id INTEGER DEFAULT 0`);
+      await db.query(`ALTER TABLE user_alerts ADD COLUMN IF NOT EXISTS other_id INTEGER DEFAULT 0`);
+      await db.query(`ALTER TABLE user_alerts ADD COLUMN IF NOT EXISTS other_name VARCHAR(120) DEFAULT ''`);
+      await db.query(
+        'INSERT INTO user_alerts (user_id, title, body, kind, ref_id) VALUES ($1, $2, $3, $4, $5)',
+        [current.user_id, 'Support reply', note, 'support', id],
+      );
+    } catch (_) {}
     return { ok: true };
   }
 
