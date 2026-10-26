@@ -110,11 +110,30 @@ export class ChatService {
       await db.query(`ALTER TABLE user_alerts ADD COLUMN IF NOT EXISTS ref_id INTEGER DEFAULT 0`);
       await db.query(`ALTER TABLE user_alerts ADD COLUMN IF NOT EXISTS other_id INTEGER DEFAULT 0`);
       await db.query(`ALTER TABLE user_alerts ADD COLUMN IF NOT EXISTS other_name VARCHAR(120) DEFAULT ''`);
+      const cleanTitle = title.slice(0, 160);
+      const cleanName = String(otherName || '').slice(0, 120);
+      const payload: Record<string, string> = { type: kind };
+      if (refId) payload.chatId = String(refId);
+      if (kind === 'chat' && refId) payload.collapse = `chat-${refId}`;
+      if (kind === 'chat' && refId) {
+        const existing = await db.query(
+          `SELECT id FROM user_alerts WHERE user_id = $1 AND kind = 'chat' AND ref_id = $2 AND is_read = FALSE ORDER BY id DESC LIMIT 1`,
+          [userId, refId],
+        );
+        if (existing.rows[0]) {
+          await db.query(
+            `UPDATE user_alerts SET title = $1, body = $2, other_id = $3, other_name = $4, created_at = NOW() WHERE id = $5`,
+            [cleanTitle, body, otherId || 0, cleanName, existing.rows[0].id],
+          );
+          await this.ping(userId, cleanTitle, body, payload);
+          return;
+        }
+      }
       await db.query(
         'INSERT INTO user_alerts (user_id, title, body, kind, ref_id, other_id, other_name) VALUES ($1,$2,$3,$4,$5,$6,$7)',
-        [userId, title.slice(0, 160), body, kind, refId || 0, otherId || 0, String(otherName || '').slice(0, 120)],
+        [userId, cleanTitle, body, kind, refId || 0, otherId || 0, cleanName],
       );
-      await this.ping(userId, title, body, { type: kind });
+      await this.ping(userId, cleanTitle, body, payload);
     } catch (error) {
       console.log('ALERT SKIP', error);
     }
@@ -533,7 +552,9 @@ export class ChatService {
     await db.query('UPDATE chats SET last_message = $1, last_from_id = $2, updated_at = NOW() WHERE id = $3', [text, fromId, chatId]);
     const chat = (await db.query('SELECT * FROM chats WHERE id = $1', [chatId])).rows[0];
     if (chat) {
-      await this.ping(this.otherId(chat, fromId), 'New message', text.slice(0, 80), { type: 'chat', chatId: String(chatId) });
+      const other = this.otherId(chat, fromId);
+      const senderName = Number(chat.user_a_id) === Number(fromId) ? chat.name_a : chat.name_b;
+      await this.alert(other, 'New message', text.slice(0, 160), 'chat', chatId, fromId, senderName);
     }
     return this.get(chatId, fromId);
   }

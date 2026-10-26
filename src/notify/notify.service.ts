@@ -48,11 +48,14 @@ export class NotifyService {
         data: { title, body, ...data },
         android: {
           priority: 'high',
+          collapseKey: data.collapse || undefined,
           notification: {
             channelId: 'skill4handel',
             sound: 'default',
+            tag: data.collapse || undefined,
           },
         },
+        apns: data.collapse ? { headers: { 'apns-collapse-id': data.collapse } } : undefined,
       });
       console.log('PUSH RESULT', userId, result.successCount, result.failureCount);
       const stale: string[] = [];
