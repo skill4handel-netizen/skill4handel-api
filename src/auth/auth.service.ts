@@ -223,11 +223,11 @@ export class AuthService {
       if (result.rows.length > 1) throw new UnauthorizedException('This name matches more than one account. Please log in with your email.');
     }
     const user = result.rows[0];
-    if (!user || !(await this.passwordMatches(password, user.password_hash))) {
-      throw new UnauthorizedException('Email or password is wrong');
+    if (!user) throw new UnauthorizedException('No account with this email exists on the server.');
+    if (!(await this.passwordMatches(password, user.password_hash))) {
+      throw new UnauthorizedException('The password is wrong for this account.');
     }
     if (user.is_suspended) throw new UnauthorizedException('Account suspended');
-    if (!user.email_verified) throw new UnauthorizedException('Email not verified');
     await this.upgradeHash(user.id, password, user.password_hash);
     await db.query('UPDATE users SET last_login = NOW(), updated_at = NOW() WHERE id = $1', [user.id]);
     return {
