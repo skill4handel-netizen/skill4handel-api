@@ -393,6 +393,9 @@ export class AuthService {
     await db.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS language VARCHAR(8) DEFAULT 'en'");
     await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS city_changed_at TIMESTAMPTZ`);
     await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS meeting_mode VARCHAR(20) DEFAULT 'both'`);
+    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS gender VARCHAR(40) DEFAULT ''`);
+    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS needs TEXT DEFAULT ''`);
+    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`);
     if (!String(body.offers || '').trim()) throw new BadRequestException('Choose at least one skill you can offer.');
     const current = (await db.query('SELECT city, city_changed_at FROM users WHERE id = $1', [body.id])).rows[0];
     const nextCity = String(body.city || '').trim();
