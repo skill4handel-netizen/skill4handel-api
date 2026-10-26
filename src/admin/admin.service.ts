@@ -547,12 +547,18 @@ export class AdminService {
   }
 
   async setPassword(id: number, password: string) {
-    if (!password || password.length < 4) throw new UnauthorizedException('Password too short');
-    await db.query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [
-      await this.hash(password),
-      id,
+    const value = String(password || '').trim();
+    if (value.length < 8 || !/[A-Za-z]/.test(value) || !/[0-9]/.test(value)) {
+      throw new UnauthorizedException('Use at least 8 characters, including one letter and one number.');
+    }
+    const user = (await db.query('SELECT email FROM users WHERE id = $1', [id])).rows[0];
+    if (!user) throw new UnauthorizedException('User not found');
+    const hashed = await this.hash(value);
+    await db.query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE lower(email) = lower($2)', [
+      hashed,
+      user.email,
     ]);
-    return { ok: true };
+    return { ok: true, email: user.email };
   }
 
   async verifyUser(id: number) {

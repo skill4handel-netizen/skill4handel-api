@@ -216,19 +216,23 @@ export class AuthService {
   }
   async login(email: string, password: string) {
     const clean = email.trim().toLowerCase();
+    const typed = String(password || '').trim();
     await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMPTZ`);
-    let result = await db.query('SELECT * FROM users WHERE lower(email) = $1', [clean]);
-    if (!result.rows[0]) {
-      result = await db.query('SELECT * FROM users WHERE lower(name) = $1 ORDER BY id DESC LIMIT 2', [clean]);
-      if (result.rows.length > 1) throw new UnauthorizedException('This name matches more than one account. Please log in with your email.');
+    let result = await db.query('SELECT * FROM users WHERE lower(email) = $1 ORDER BY updated_at DESC NULLS LAST, id DESC', [clean]);
+    if (!result.rows.length) {
+      result = await db.query('SELECT * FROM users WHERE lower(name) = $1 ORDER BY updated_at DESC NULLS LAST, id DESC LIMIT 5', [clean]);
     }
-    const user = result.rows[0];
-    if (!user) throw new UnauthorizedException('No account with this email exists on the server.');
-    if (!(await this.passwordMatches(password, user.password_hash))) {
-      throw new UnauthorizedException('The password is wrong for this account.');
+    if (!result.rows.length) throw new UnauthorizedException('No account with this email exists on the server.');
+    let user = null;
+    for (const row of result.rows) {
+      if (await this.passwordMatches(typed, row.password_hash)) {
+        user = row;
+        break;
+      }
     }
+    if (!user) throw new UnauthorizedException('The password is wrong for this account.');
     if (user.is_suspended) throw new UnauthorizedException('Account suspended');
-    await this.upgradeHash(user.id, password, user.password_hash);
+    await this.upgradeHash(user.id, typed, user.password_hash);
     await db.query('UPDATE users SET last_login = NOW(), updated_at = NOW() WHERE id = $1', [user.id]);
     return {
       token: signToken(user.id),
@@ -247,26 +251,32 @@ export class AuthService {
     if (payload.email_verified !== 'true' && payload.email_verified !== true as any) {
       throw new UnauthorizedException('Google email is not verified');
     }
-    let found = await db.query('SELECT * FROM users WHERE email = $1', [cleanEmail]);
+    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMPTZ`);
+    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS meeting_mode VARCHAR(20) DEFAULT 'both'`);
+    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS photo_url TEXT`);
+    const photo = String(payload.picture || '').slice(0, 500);
+    let found = await db.query('SELECT * FROM users WHERE lower(email) = $1', [cleanEmail]);
     let user = found.rows[0];
     if (!user) {
       const created = await db.query(
-        `INSERT INTO users (name, email, password_hash, balance, age, city, email_verified, terms_accepted_at, photo_url)
-         VALUES ($1, $2, $3, 1, 18, '', TRUE, NOW(), $4)
+        `INSERT INTO users (name, email, password_hash, balance, age, city, email_verified, terms_accepted_at, photo_url, meeting_mode)
+         VALUES ($1, $2, $3, 1, 18, '', TRUE, NOW(), $4, 'both')
          RETURNING *`,
-        [payload.name || cleanEmail.split('@')[0], cleanEmail, await this.hash('google-' + Date.now()), payload.picture || ''],
+        [payload.name || cleanEmail.split('@')[0], cleanEmail, await this.hash('google-' + Date.now()), photo],
       );
       user = created.rows[0];
-      await db.query(
-        `INSERT INTO wallet_transactions (user_id, type, amount, title)
-         VALUES ($1, 'BONUS', 1, 'Starter bonus')`,
-        [user.id],
-      );
+      try {
+        await db.query(
+          `INSERT INTO wallet_transactions (user_id, type, amount, title)
+           VALUES ($1, 'BONUS', 1, 'Starter bonus')`,
+          [user.id],
+        );
+      } catch (_) {}
     } else {
       if (user.is_suspended) throw new UnauthorizedException('Account suspended');
       await db.query(
-        'UPDATE users SET email_verified = TRUE, last_login = NOW(), updated_at = NOW() WHERE id = $1',
-        [user.id],
+        'UPDATE users SET email_verified = TRUE, last_login = NOW(), updated_at = NOW(), photo_url = CASE WHEN COALESCE(photo_url, \'\') = \'\' THEN $2 ELSE photo_url END WHERE id = $1',
+        [user.id, photo],
       );
       user.email_verified = true;
     }
