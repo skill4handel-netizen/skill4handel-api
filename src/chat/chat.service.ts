@@ -227,8 +227,7 @@ export class ChatService {
       ]);
     } catch (_) {}
     try {
-      await this.ping(Number(chat.user_a_id), 'Offer closed', reason, { type: 'offer', chatId: String(chat.id) });
-      await this.ping(Number(chat.user_b_id), 'Offer closed', reason, { type: 'offer', chatId: String(chat.id) });
+      await this.alertBoth(chat, 'Offer closed', reason, 'system');
     } catch (_) {}
     return { ...offer, status: 'CANCELLED' };
   }
@@ -269,7 +268,15 @@ export class ChatService {
     try {
       await db.query(`INSERT INTO messages (chat_id, from_id, type, text) VALUES ($1, $2, 'system', $3)`, [chatId, fromId, text]);
       await db.query('UPDATE chats SET last_message = $1, last_from_id = $2, updated_at = NOW() WHERE id = $3', [text.slice(0, 240), fromId, chatId]);
+      const chat = (await db.query('SELECT * FROM chats WHERE id = $1', [chatId])).rows[0];
+      if (chat) await this.alertBoth(chat, 'System message', text, 'system');
     } catch (_) {}
+  }
+
+  private async alertBoth(chat: any, title: string, body: string, kind = 'system') {
+    if (!chat) return;
+    await this.alert(Number(chat.user_a_id), title, body, kind, chat.id, Number(chat.user_b_id), chat.name_b);
+    await this.alert(Number(chat.user_b_id), title, body, kind, chat.id, Number(chat.user_a_id), chat.name_a);
   }
 
   private async sweepCompletionDuties() {
@@ -334,7 +341,7 @@ export class ChatService {
         for (const member of members) {
           if (!reviewed.has(member)) {
             await this.postSystem(offer.chat_id, member, body);
-            await this.alert(member, 'Review reminder', body, 'offer', offer.chat_id);
+            await this.alert(member, 'Review reminder', body, 'review', offer.chat_id, member === Number(offer.user_a_id) ? Number(offer.user_b_id) : Number(offer.user_a_id), member === Number(offer.user_a_id) ? offer.name_b : offer.name_a);
             sent = true;
           }
         }
@@ -430,6 +437,14 @@ export class ChatService {
     }));
   }
 
+
+  private async reviewPendingFor(chat: any, userId: number) {
+    const offer = await this.latestOffer(chat.id);
+    if (!offer || offer.status !== 'SETTLED') return false;
+    const reviewed = (offer.reviewed_by || []).map((value: any) => Number(value));
+    return !reviewed.includes(Number(userId));
+  }
+
   async list(userId: number) {
     await this.sweepExpired(userId);
     await this.sweepCompletionDuties();
@@ -461,6 +476,7 @@ export class ChatService {
         waitingForRequester: !pending && Number(chat.requester_id) !== Number(userId),
         photoUrl: photos[String(otherId)] || '',
         pendingSwap: pending,
+        reviewPending: await this.reviewPendingFor(chat, userId),
         kind:
           pending?.status === 'pending'
             ? Number(pending.proposedBy) === Number(userId) ? 'offer' : 'request'
@@ -615,10 +631,11 @@ export class ChatService {
       console.log('OFFER INSERT', error);
       throw new BadRequestException('The offer could not be saved. Check the skill, token amount and time, then try again.');
     }
+    const offerText = isCounter ? 'A counter-offer has been sent.' : 'An offer has been sent. If there is no response within 24 hours, it will be cancelled.';
     await db.query(`INSERT INTO messages (chat_id, from_id, type, text) VALUES ($1, $2, 'text', $3)`, [
-      chatId, userId,
-      isCounter ? 'A counter-offer has been sent.' : 'An offer has been sent. If there is no response within 24 hours, it will be cancelled.',
+      chatId, userId, offerText,
     ]);
+    await this.alertBoth(chat, isCounter ? 'Counter-offer' : 'New offer', offerText, 'system');
     await db.query('UPDATE chats SET last_message = $1, last_from_id = $2, updated_at = NOW() WHERE id = $3', [
       isCounter ? 'Counter offer' : 'New swap offer', userId, chatId,
     ]);
@@ -687,6 +704,7 @@ export class ChatService {
       await db.query(`INSERT INTO messages (chat_id, from_id, type, text) VALUES ($1, $2, 'text', $3)`, [
         chatId, userId, text,
       ]);
+      await this.alertBoth(chat, action === 'accepted' ? 'Offer accepted' : 'Offer declined', text, 'system');
     } catch (_) {}
     await db.query('UPDATE chats SET last_message = $1, last_from_id = $2, updated_at = NOW() WHERE id = $3', [
       action === 'accepted' ? 'Offer accepted' : 'Offer declined', userId, chatId,
@@ -721,6 +739,7 @@ export class ChatService {
       await db.query(`INSERT INTO messages (chat_id, from_id, type, text) VALUES ($1, $2, 'text', $3)`, [
         chatId, userId, 'The offer was cancelled. Both members may start a new request.',
       ]);
+      await this.alertBoth(chat, 'Offer cancelled', 'The offer was cancelled. Both members may start a new request.', 'system');
     } catch (_) {}
     await db.query(
       'UPDATE chats SET last_message = $1, last_from_id = $2, updated_at = NOW() WHERE id = $3',
@@ -765,13 +784,13 @@ export class ChatService {
       [[...doneBy], doneBy.size, offer.id],
     );
     try {
+      const doneText = both
+        ? 'Both members confirmed completion. Reviews can now be written.'
+        : 'Completion has been confirmed by one member. Waiting for the other confirmation.';
       await db.query(`INSERT INTO messages (chat_id, from_id, type, text) VALUES ($1, $2, 'text', $3)`, [
-        chatId,
-        userId,
-        both
-          ? 'Both members confirmed completion. Reviews can now be written.'
-          : 'Completion has been confirmed by one member. Waiting for the other confirmation.',
+        chatId, userId, doneText,
       ]);
+      await this.alertBoth(chat, 'Exchange update', doneText, both ? 'review' : 'system');
     } catch (_) {}
     if (both && !offer.settled) {
       const client = await db.connect();
@@ -849,8 +868,14 @@ export class ChatService {
       throw new BadRequestException('Not in this chat');
     }
     const offer = await this.latestOffer(chatId);
-    if (offer && offer.status === 'ACCEPTED') {
-      throw new BadRequestException('This chat cannot be deleted while the accepted session is still open. Mark the session done first.');
+    if (offer && ['ACCEPTED', 'DISPUTED'].includes(offer.status)) {
+      throw new BadRequestException('This chat cannot be deleted while the exchange is still open. Complete the exchange and write the review first.');
+    }
+    if (offer && offer.status === 'SETTLED') {
+      const reviewed = (offer.reviewed_by || []).map((value: any) => Number(value));
+      if (!reviewed.includes(Number(userId))) {
+        throw new BadRequestException('This chat cannot be deleted until you write the review and the exchange process is complete.');
+      }
     }
     const other = Number(chat.user_a_id) === Number(userId) ? Number(chat.user_b_id) : Number(chat.user_a_id);
     const mine = Number(chat.user_a_id) === Number(userId) ? chat.name_a : chat.name_b;
