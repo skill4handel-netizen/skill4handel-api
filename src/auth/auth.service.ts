@@ -407,15 +407,16 @@ export class AuthService {
       if (days < 30) throw new BadRequestException('You can change your city once every 30 days.');
     }
     try {
+      const cityChangedAt = cityChanged ? new Date() : (current?.city_changed_at || null);
       const result = await db.query(
         `UPDATE users
          SET name = $1,
              city = $2,
-             city_changed_at = CASE WHEN city IS DISTINCT FROM $2 THEN NOW() ELSE city_changed_at END,
-             offers = $3, needs = $4, gender = $5, age = $6, language = $7, meeting_mode = $8, updated_at = NOW()
-         WHERE id = $9
+             city_changed_at = $3,
+             offers = $4, needs = $5, gender = $6, age = $7, language = $8, meeting_mode = $9, updated_at = NOW()
+         WHERE id = $10
          RETURNING *`,
-        [String(body.name || '').slice(0, 120), nextCity, String(body.offers || ''), String(body.needs || ''), String(body.gender || '').slice(0, 40), age, language, String(body.meetingMode || 'both').slice(0, 20), body.id],
+        [String(body.name || '').slice(0, 120), nextCity, cityChangedAt, String(body.offers || ''), String(body.needs || ''), String(body.gender || '').slice(0, 40), age, language, String(body.meetingMode || 'both').slice(0, 20), body.id],
       );
       const user = result.rows[0];
       if (!user) throw new UnauthorizedException('User not found');
