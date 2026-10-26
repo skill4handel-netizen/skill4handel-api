@@ -51,6 +51,19 @@ export class AuthService {
     `);
   }
 
+
+  private async withTokenState(user: any) {
+    const reserved = await db.query(
+      `SELECT COALESCE(SUM(extra_tokens), 0)::int AS reserved
+       FROM exchange_offers
+       WHERE proposed_by = $1 AND status = 'ACCEPTED' AND COALESCE(settled, FALSE) = FALSE`,
+      [user.id],
+    );
+    const held = Number(reserved.rows[0]?.reserved || 0);
+    const balance = Number(user.balance || 0);
+    return { ...user, reserved: held, available: Math.max(0, balance - held) };
+  }
+
   private publicUser(user: any, reviews: any[] = [], history: any[] = []) {
     const rating = reviews.length
       ? Number((reviews.reduce((sum, item) => sum + Number(item.rating), 0) / reviews.length).toFixed(1))
@@ -66,6 +79,8 @@ export class AuthService {
       gender: user.gender || '',
       age: Number(user.age || 0),
       balance: Number(user.balance || 0),
+      reserved: Number(user.reserved || 0),
+      available: Number(user.available ?? user.balance ?? 0),
       history,
       reviews,
       rating,
@@ -142,7 +157,8 @@ export class AuthService {
     const result = await db.query('SELECT * FROM users WHERE id = $1', [userId]);
     const user = result.rows[0];
     if (!user) throw new UnauthorizedException('User not found');
-    return this.privateUser(user, await this.reviewsOf(user.id), await this.historyOf(user.id));
+    const ready = await this.withTokenState(user);
+    return this.privateUser(ready, await this.reviewsOf(user.id), await this.historyOf(user.id));
   }
 
   async signup(name: string, email: string, password: string, age?: number, acceptedTerms?: boolean, city?: string, phone?: string, accessibility?: boolean, birthDate?: string, language?: string) {
@@ -219,9 +235,10 @@ export class AuthService {
     if (!user.email_verified) throw new UnauthorizedException('Email not verified');
     await this.upgradeHash(user.id, password, user.password_hash);
     await db.query('UPDATE users SET last_login = NOW(), updated_at = NOW() WHERE id = $1', [user.id]);
+    const ready = await this.withTokenState(user);
     return {
       token: signToken(user.id),
-      user: this.privateUser(user, await this.reviewsOf(user.id), await this.historyOf(user.id)),
+      user: this.privateUser(ready, await this.reviewsOf(user.id), await this.historyOf(user.id)),
     };
   }
 

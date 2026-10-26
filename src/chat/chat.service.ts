@@ -389,6 +389,29 @@ export class ChatService {
     return this.get(chatId, fromId);
   }
 
+
+  private async tokenState(userId: number) {
+    await this.ensureOfferColumns();
+    const user = await db.query('SELECT balance FROM users WHERE id = $1', [userId]);
+    const reserved = await db.query(
+      `SELECT COALESCE(SUM(extra_tokens), 0)::int AS reserved
+       FROM exchange_offers
+       WHERE proposed_by = $1 AND status = 'ACCEPTED' AND COALESCE(settled, FALSE) = FALSE`,
+      [userId],
+    );
+    const balance = Number(user.rows[0]?.balance || 0);
+    const held = Number(reserved.rows[0]?.reserved || 0);
+    return { balance, reserved: held, available: Math.max(0, balance - held) };
+  }
+
+  private async assertCanOfferTokens(userId: number, tokens: number) {
+    if (tokens <= 0) return;
+    const state = await this.tokenState(userId);
+    if (tokens > state.available) {
+      throw new BadRequestException('You cannot offer more tokens than your available balance.');
+    }
+  }
+
   private async assertSwapLimit(userA: number, userB: number) {
     const pair = await db.query(
       `SELECT e.status, e.updated_at
@@ -439,6 +462,7 @@ export class ChatService {
     }
     if (!existing) await this.assertSwapLimit(chat.user_a_id, chat.user_b_id);
     const tokens = Math.min(10, Math.max(0, Number(body.extraTokens) || 0));
+    if (tokens > 0) await this.assertCanOfferTokens(userId, tokens);
     const isCounter = !!existing;
     const requested = String(isCounter ? existing.skillRequested : body.skillRequested || '').slice(0, 250);
     const offered = String(body.volunteer ? '' : body.skillOffered || '').slice(0, 250);
@@ -483,21 +507,46 @@ export class ChatService {
     if (!offer || !['PROPOSED', 'COUNTERED'].includes(offer.status)) throw new BadRequestException('No pending offer');
     if (Number(userId) === Number(offer.proposed_by)) throw new BadRequestException('The other person must respond');
     const skillOffered = String(body.skillOffered || '').trim();
-    if (action === 'accepted' && skillOffered) {
-      if (this.banned(skillOffered)) {
-        throw new BadRequestException('This activity is not allowed on Skill4Handel');
+    if (action === 'accepted' && skillOffered && this.banned(skillOffered)) {
+      throw new BadRequestException('This activity is not allowed on Skill4Handel');
+    }
+    const amount = Number(offer.extra_tokens || 0);
+    const client = await db.connect();
+    try {
+      await client.query('BEGIN');
+      if (action === 'accepted' && amount > 0) {
+        const payerId = Number(offer.proposed_by);
+        const locked = await client.query('SELECT balance FROM users WHERE id = $1 FOR UPDATE', [payerId]);
+        const reserved = await client.query(
+          `SELECT COALESCE(SUM(extra_tokens), 0)::int AS reserved
+           FROM exchange_offers
+           WHERE proposed_by = $1 AND status = 'ACCEPTED' AND COALESCE(settled, FALSE) = FALSE AND id <> $2`,
+          [payerId, offer.id],
+        );
+        const available = Number(locked.rows[0]?.balance || 0) - Number(reserved.rows[0]?.reserved || 0);
+        if (available < amount) {
+          throw new BadRequestException('The requester does not currently have enough tokens for this exchange.');
+        }
       }
-      await db.query(
-        `UPDATE exchange_offers
-         SET status = 'ACCEPTED', skill_offered = $1, done_by = '{}', reviewed_by = '{}', updated_at = NOW()
-         WHERE id = $2`,
-        [skillOffered, offer.id],
-      );
-    } else {
-      await db.query(
-        `UPDATE exchange_offers SET status = $1, done_by = '{}', reviewed_by = '{}', updated_at = NOW() WHERE id = $2`,
-        [action === 'accepted' ? 'ACCEPTED' : 'REJECTED', offer.id],
-      );
+      if (action === 'accepted' && skillOffered) {
+        await client.query(
+          `UPDATE exchange_offers
+           SET status = 'ACCEPTED', skill_offered = $1, done_by = '{}', reviewed_by = '{}', updated_at = NOW()
+           WHERE id = $2`,
+          [skillOffered, offer.id],
+        );
+      } else {
+        await client.query(
+          `UPDATE exchange_offers SET status = $1, done_by = '{}', reviewed_by = '{}', updated_at = NOW() WHERE id = $2`,
+          [action === 'accepted' ? 'ACCEPTED' : 'REJECTED', offer.id],
+        );
+      }
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
     }
     const text = action === 'accepted'
       ? (skillOffered
@@ -579,8 +628,8 @@ export class ChatService {
     const doneBy = new Set<number>(offer.done_by || []);
     doneBy.add(Number(userId));
     const both = doneBy.has(Number(chat.user_a_id)) && doneBy.has(Number(chat.user_b_id));
-    await db.query(`UPDATE exchange_offers SET done_by = $1, status = $2, updated_at = NOW() WHERE id = $3`, [
-      [...doneBy], both ? 'SETTLED' : 'ACCEPTED', offer.id,
+    await db.query(`UPDATE exchange_offers SET done_by = $1, status = 'ACCEPTED', updated_at = NOW() WHERE id = $2`, [
+      [...doneBy], offer.id,
     ]);
     try {
       await db.query(`INSERT INTO messages (chat_id, from_id, type, text) VALUES ($1, $2, 'text', $3)`, [
@@ -628,7 +677,7 @@ export class ChatService {
               [chat.user_b_id, `Skill swap bonus for ${offer.skill_requested}`, offer.id],
             );
           }
-          await client.query('UPDATE exchange_offers SET settled = TRUE WHERE id = $1', [offer.id]);
+          await client.query(`UPDATE exchange_offers SET settled = TRUE, status = 'SETTLED', updated_at = NOW() WHERE id = $1`, [offer.id]);
         }
         await client.query('COMMIT');
       } catch (error) {
