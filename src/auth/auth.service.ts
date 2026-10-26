@@ -215,8 +215,13 @@ export class AuthService {
     return { ok: true, saved: true, tokens: count.rows[0].n };
   }
   async login(email: string, password: string) {
-    const cleanEmail = email.trim().toLowerCase();
-    const result = await db.query('SELECT * FROM users WHERE email = $1', [cleanEmail]);
+    const clean = email.trim().toLowerCase();
+    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMPTZ`);
+    let result = await db.query('SELECT * FROM users WHERE lower(email) = $1', [clean]);
+    if (!result.rows[0]) {
+      result = await db.query('SELECT * FROM users WHERE lower(name) = $1 ORDER BY id DESC LIMIT 2', [clean]);
+      if (result.rows.length > 1) throw new UnauthorizedException('This name matches more than one account. Please log in with your email.');
+    }
     const user = result.rows[0];
     if (!user || !(await this.passwordMatches(password, user.password_hash))) {
       throw new UnauthorizedException('Email or password is wrong');
