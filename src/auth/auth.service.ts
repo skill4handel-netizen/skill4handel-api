@@ -385,38 +385,46 @@ export class AuthService {
     language?: string;
     meetingMode?: string;
   }) {
-    const age = Number(body.age || 0);
-    if (age > 0 && age < 18) {
+    const ageNumber = Number(body.age || 0);
+    const age = Number.isFinite(ageNumber) && ageNumber > 0 ? Math.floor(ageNumber) : null;
+    if (age && age < 18) {
       throw new BadRequestException('Skill4Handel is only for users 18 and older');
     }
     const language = body.language === 'nl' ? 'nl' : 'en';
-    await db.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS language VARCHAR(8) DEFAULT 'en'");
+    await db.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS language VARCHAR(10) DEFAULT 'en'");
     await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS city_changed_at TIMESTAMPTZ`);
     await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS meeting_mode VARCHAR(20) DEFAULT 'both'`);
     await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS gender VARCHAR(40) DEFAULT ''`);
     await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS needs TEXT DEFAULT ''`);
+    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS age INTEGER`);
     await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`);
     if (!String(body.offers || '').trim()) throw new BadRequestException('Choose at least one skill you can offer.');
     const current = (await db.query('SELECT city, city_changed_at FROM users WHERE id = $1', [body.id])).rows[0];
-    const nextCity = String(body.city || '').trim();
+    const nextCity = String(body.city || '').trim().slice(0, 120);
     const cityChanged = current && nextCity && nextCity !== String(current.city || '');
     if (cityChanged && current.city_changed_at) {
       const days = (Date.now() - new Date(current.city_changed_at).getTime()) / 864e5;
       if (days < 30) throw new BadRequestException('You can change your city once every 30 days.');
     }
-    const result = await db.query(
-      `UPDATE users
-       SET name = $1,
-           city = $2,
-           city_changed_at = CASE WHEN city IS DISTINCT FROM $2 THEN NOW() ELSE city_changed_at END,
-           offers = $3, needs = $4, gender = $5, age = $6, language = $7, meeting_mode = $8, updated_at = NOW()
-       WHERE id = $9
-       RETURNING *`,
-      [body.name, nextCity, body.offers, body.needs, body.gender || '', age || null, language, body.meetingMode || 'both', body.id],
-    );
-    const user = result.rows[0];
-    if (!user) throw new UnauthorizedException('User not found');
-    return { user: this.publicUser(user, await this.reviewsOf(user.id), await this.historyOf(user.id)) };
+    try {
+      const result = await db.query(
+        `UPDATE users
+         SET name = $1,
+             city = $2,
+             city_changed_at = CASE WHEN city IS DISTINCT FROM $2 THEN NOW() ELSE city_changed_at END,
+             offers = $3, needs = $4, gender = $5, age = $6, language = $7, meeting_mode = $8, updated_at = NOW()
+         WHERE id = $9
+         RETURNING *`,
+        [String(body.name || '').slice(0, 120), nextCity, String(body.offers || ''), String(body.needs || ''), String(body.gender || '').slice(0, 40), age, language, String(body.meetingMode || 'both').slice(0, 20), body.id],
+      );
+      const user = result.rows[0];
+      if (!user) throw new UnauthorizedException('User not found');
+      return { user: this.publicUser(user, await this.reviewsOf(user.id), await this.historyOf(user.id)) };
+    } catch (error) {
+      if (error instanceof BadRequestException || error instanceof UnauthorizedException) throw error;
+      console.log('PROFILE SAVE', error);
+      throw new BadRequestException(error instanceof Error ? error.message : 'Profile could not be saved');
+    }
   }
 
   async setPhoto(id: number, photoUrl: string) {
