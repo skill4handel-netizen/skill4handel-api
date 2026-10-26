@@ -81,30 +81,39 @@ export class AuthService {
   }
 
   private async reviewsOf(userId: number) {
-    const result = await db.query(
-      'SELECT id, from_id, from_name, rating, text, skill FROM reviews WHERE to_id = $1 AND COALESCE(hidden, FALSE) = FALSE ORDER BY created_at DESC',
-      [userId],
-    );
-    return result.rows.map((row: any) => ({
-      id: row.id,
-      fromId: row.from_id,
-      fromName: row.from_name,
-      rating: Number(row.rating),
-      text: row.text,
-      skill: row.skill,
-    }));
+    try {
+      await db.query(`ALTER TABLE reviews ADD COLUMN IF NOT EXISTS hidden BOOLEAN DEFAULT FALSE`);
+      const result = await db.query(
+        'SELECT id, from_id, from_name, rating, text, skill FROM reviews WHERE to_id = $1 AND COALESCE(hidden, FALSE) = FALSE ORDER BY created_at DESC',
+        [userId],
+      );
+      return result.rows.map((row: any) => ({
+        id: row.id,
+        fromId: row.from_id,
+        fromName: row.from_name,
+        rating: Number(row.rating),
+        text: row.text,
+        skill: row.skill,
+      }));
+    } catch (_) {
+      return [];
+    }
   }
 
   private async historyOf(userId: number) {
-    const result = await db.query(
-      'SELECT id, title, amount, type FROM wallet_transactions WHERE user_id = $1 ORDER BY created_at DESC',
-      [userId],
-    );
-    return result.rows.map((row: any) => ({
-      id: row.id,
-      title: row.title,
-      amount: `${Number(row.amount) > 0 ? '+' : ''}${row.amount} S4H`,
-    }));
+    try {
+      const result = await db.query(
+        'SELECT id, title, amount, type FROM wallet_transactions WHERE user_id = $1 ORDER BY created_at DESC',
+        [userId],
+      );
+      return result.rows.map((row: any) => ({
+        id: row.id,
+        title: row.title,
+        amount: `${Number(row.amount) > 0 ? '+' : ''}${row.amount} S4H`,
+      }));
+    } catch (_) {
+      return [];
+    }
   }
 
   async publicProfile(userId: number) {
