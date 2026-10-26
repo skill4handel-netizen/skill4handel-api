@@ -56,7 +56,7 @@ export class AuthService {
     const reserved = await db.query(
       `SELECT COALESCE(SUM(extra_tokens), 0)::int AS reserved
        FROM exchange_offers
-       WHERE proposed_by = $1 AND status = 'ACCEPTED' AND COALESCE(settled, FALSE) = FALSE`,
+       WHERE proposed_by = $1 AND status IN ('ACCEPTED', 'DISPUTED') AND COALESCE(settled, FALSE) = FALSE`,
       [user.id],
     );
     const held = Number(reserved.rows[0]?.reserved || 0);

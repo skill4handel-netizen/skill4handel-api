@@ -60,6 +60,21 @@ export class ChatService {
         'The other member has marked the exchange as complete.',
         'De andere deelnemer heeft de uitwisseling als afgerond gemarkeerd.',
       ],
+      'Completion reminder': ['Completion reminder', 'Herinnering afronding'],
+      'Review reminder': ['Review reminder', 'Herinnering beoordeling'],
+      'Exchange in arbitration': ['Exchange in arbitration', 'Uitwisseling in arbitrage'],
+      'Please confirm completion within 72 hours. If you do not respond, the exchange goes to arbitration and tokens will not move until an admin decides.': [
+        'Please confirm completion within 72 hours. If you do not respond, the exchange goes to arbitration and tokens will not move until an admin decides.',
+        'Bevestig de afronding binnen 72 uur. Als u niet reageert, gaat de uitwisseling naar arbitrage en worden tokens niet verplaatst tot een beheerder beslist.',
+      ],
+      'Please write your review. New exchanges stay blocked until your review is submitted.': [
+        'Please write your review. New exchanges stay blocked until your review is submitted.',
+        'Schrijf alstublieft uw beoordeling. Nieuwe uitwisselingen blijven geblokkeerd tot uw beoordeling is ingediend.',
+      ],
+      'The other member did not confirm completion within 72 hours. This exchange is now in arbitration. Tokens will not move until an admin decides.': [
+        'The other member did not confirm completion within 72 hours. This exchange is now in arbitration. Tokens will not move until an admin decides.',
+        'De andere deelnemer heeft de afronding niet binnen 72 uur bevestigd. Deze uitwisseling staat nu in arbitrage. Tokens worden niet verplaatst tot een beheerder beslist.',
+      ],
     };
     const t = table[title];
     const b = table[body];
@@ -75,6 +90,10 @@ export class ChatService {
     await db.query(`ALTER TABLE exchange_offers ADD COLUMN IF NOT EXISTS extra_tokens INTEGER DEFAULT 0`);
     await db.query(`ALTER TABLE exchange_offers ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMPTZ`);
     await db.query(`ALTER TABLE exchange_offers ADD COLUMN IF NOT EXISTS location VARCHAR(255) DEFAULT ''`);
+    await db.query(`ALTER TABLE exchange_offers ADD COLUMN IF NOT EXISTS first_done_at TIMESTAMPTZ`);
+    await db.query(`ALTER TABLE exchange_offers ADD COLUMN IF NOT EXISTS last_reminder_at TIMESTAMPTZ`);
+    await db.query(`ALTER TABLE exchange_offers ADD COLUMN IF NOT EXISTS disputed_at TIMESTAMPTZ`);
+    await db.query(`ALTER TABLE exchange_offers ADD COLUMN IF NOT EXISTS dispute_ticket_id INTEGER`);
   }
 
   private async alert(userId: number, title: string, body: string, kind = 'info', refId = 0, otherId = 0, otherName = '') {
@@ -129,6 +148,7 @@ export class ChatService {
       CANCELLED: 'cancelled',
       SETTLED: 'completed',
       REVIEWED: 'completed',
+      DISPUTED: 'disputed',
     };
     return statusMap[status] || String(status).toLowerCase();
   }
@@ -213,6 +233,118 @@ export class ChatService {
     return { ...offer, status: 'CANCELLED' };
   }
 
+
+  private async blockingDuty(userId: number) {
+    await this.ensureOfferColumns();
+    const row = await db.query(
+      `SELECT e.status, c.name_a, c.name_b, c.user_a_id, c.user_b_id
+       FROM exchange_offers e
+       JOIN chats c ON c.id = e.chat_id
+       WHERE (c.user_a_id = $1 OR c.user_b_id = $1)
+         AND (
+           (e.status = 'ACCEPTED' AND NOT ($1 = ANY(COALESCE(e.done_by, '{}'))))
+           OR (e.status = 'SETTLED' AND NOT ($1 = ANY(COALESCE(e.reviewed_by, '{}'))))
+           OR e.status = 'DISPUTED'
+         )
+       ORDER BY e.updated_at DESC
+       LIMIT 1`,
+      [userId],
+    );
+    return row.rows[0] || null;
+  }
+
+  private async assertNoBlockingDuty(userId: number) {
+    const duty = await this.blockingDuty(userId);
+    if (!duty) return;
+    if (duty.status === 'SETTLED') {
+      throw new BadRequestException('Write your pending review before starting or accepting another exchange.');
+    }
+    if (duty.status === 'DISPUTED') {
+      throw new BadRequestException('An exchange is in arbitration. You cannot start or accept another exchange until it is resolved.');
+    }
+    throw new BadRequestException('Confirm completion and write your review before starting or accepting another exchange.');
+  }
+
+  private async postSystem(chatId: number, fromId: number, text: string) {
+    try {
+      await db.query(`INSERT INTO messages (chat_id, from_id, type, text) VALUES ($1, $2, 'system', $3)`, [chatId, fromId, text]);
+      await db.query('UPDATE chats SET last_message = $1, last_from_id = $2, updated_at = NOW() WHERE id = $3', [text.slice(0, 240), fromId, chatId]);
+    } catch (_) {}
+  }
+
+  private async sweepCompletionDuties() {
+    await this.ensureOfferColumns();
+    const due = await db.query(
+      `SELECT e.*, c.user_a_id, c.user_b_id, c.name_a, c.name_b
+       FROM exchange_offers e
+       JOIN chats c ON c.id = e.chat_id
+       WHERE e.status = 'ACCEPTED'
+         AND COALESCE(array_length(e.done_by, 1), 0) = 1
+         AND e.first_done_at IS NOT NULL
+         AND e.first_done_at <= NOW() - INTERVAL '72 hours'`,
+    );
+    for (const offer of due.rows) {
+      const done = Number((offer.done_by || [])[0] || 0);
+      const waiting = done === Number(offer.user_a_id) ? Number(offer.user_b_id) : Number(offer.user_a_id);
+      const waitingName = waiting === Number(offer.user_a_id) ? offer.name_a : offer.name_b;
+      const otherName = waiting === Number(offer.user_a_id) ? offer.name_b : offer.name_a;
+      const note = 'The other member did not confirm completion within 72 hours. This exchange is now in arbitration. Tokens will not move until an admin decides.';
+      const ticket = await db.query(
+        `INSERT INTO tickets (user_id, name, type, other_name, text, status)
+         VALUES ($1, $2, 'arbitration', $3, $4, 'open')
+         RETURNING id`,
+        [waiting, waitingName || 'Member', otherName || 'Member', `${note} Offer #${offer.id}. Skill: ${offer.skill_requested || ''}. Tokens: ${offer.extra_tokens || 0}.`],
+      );
+      await db.query(
+        `UPDATE exchange_offers
+         SET status = 'DISPUTED', disputed_at = NOW(), dispute_ticket_id = $1, updated_at = NOW()
+         WHERE id = $2`,
+        [ticket.rows[0].id, offer.id],
+      );
+      await this.postSystem(offer.chat_id, done || waiting, note);
+      await this.alert(waiting, 'Exchange in arbitration', note, 'offer', offer.chat_id, done, otherName);
+      await this.alert(done, 'Exchange in arbitration', note, 'offer', offer.chat_id, waiting, waitingName);
+    }
+
+    const reminders = await db.query(
+      `SELECT e.*, c.user_a_id, c.user_b_id, c.name_a, c.name_b
+       FROM exchange_offers e
+       JOIN chats c ON c.id = e.chat_id
+       WHERE (
+           (e.status = 'ACCEPTED' AND COALESCE(array_length(e.done_by, 1), 0) = 1)
+           OR e.status = 'SETTLED'
+         )
+         AND (e.last_reminder_at IS NULL OR e.last_reminder_at <= NOW() - INTERVAL '8 hours')`,
+    );
+    for (const offer of reminders.rows) {
+      const members = [Number(offer.user_a_id), Number(offer.user_b_id)];
+      let sent = false;
+      if (offer.status === 'ACCEPTED') {
+        const done = new Set((offer.done_by || []).map((value: any) => Number(value)));
+        const waiting = members.find((id) => !done.has(id));
+        if (waiting) {
+          const body = 'Please confirm completion within 72 hours. If you do not respond, the exchange goes to arbitration and tokens will not move until an admin decides.';
+          await this.postSystem(offer.chat_id, waiting, body);
+          await this.alert(waiting, 'Completion reminder', body, 'offer', offer.chat_id);
+          sent = true;
+        }
+      } else {
+        const reviewed = new Set((offer.reviewed_by || []).map((value: any) => Number(value)));
+        const body = 'Please write your review. New exchanges stay blocked until your review is submitted.';
+        for (const member of members) {
+          if (!reviewed.has(member)) {
+            await this.postSystem(offer.chat_id, member, body);
+            await this.alert(member, 'Review reminder', body, 'offer', offer.chat_id);
+            sent = true;
+          }
+        }
+      }
+      if (sent) {
+        await db.query('UPDATE exchange_offers SET last_reminder_at = NOW(), updated_at = NOW() WHERE id = $1', [offer.id]);
+      }
+    }
+  }
+
   private async sweepExpired(userId: number) {
     const result = await db.query(
       `SELECT e.*, c.user_a_id, c.user_b_id, c.id AS chat_id
@@ -286,7 +418,7 @@ export class ChatService {
        FROM exchange_offers e
        JOIN chats c ON c.id = e.chat_id
        WHERE (c.user_a_id = $1 OR c.user_b_id = $1)
-         AND e.status IN ('ACCEPTED', 'SETTLED', 'REVIEWED', 'REJECTED', 'CANCELLED')
+         AND e.status IN ('ACCEPTED', 'SETTLED', 'REVIEWED', 'REJECTED', 'CANCELLED', 'DISPUTED')
        ORDER BY e.updated_at DESC`,
       [userId],
     );
@@ -300,6 +432,7 @@ export class ChatService {
 
   async list(userId: number) {
     await this.sweepExpired(userId);
+    await this.sweepCompletionDuties();
     const result = await db.query(
       `SELECT * FROM chats
        WHERE (user_a_id = $1 OR user_b_id = $1)
@@ -396,7 +529,7 @@ export class ChatService {
     const reserved = await db.query(
       `SELECT COALESCE(SUM(extra_tokens), 0)::int AS reserved
        FROM exchange_offers
-       WHERE proposed_by = $1 AND status = 'ACCEPTED' AND COALESCE(settled, FALSE) = FALSE`,
+       WHERE proposed_by = $1 AND status IN ('ACCEPTED', 'DISPUTED') AND COALESCE(settled, FALSE) = FALSE`,
       [userId],
     );
     const balance = Number(user.rows[0]?.balance || 0);
@@ -461,6 +594,7 @@ export class ChatService {
       throw new BadRequestException('Finish the current swap first');
     }
     if (!existing) await this.assertSwapLimit(chat.user_a_id, chat.user_b_id);
+    await this.assertNoBlockingDuty(userId);
     const tokens = Math.min(10, Math.max(0, Number(body.extraTokens) || 0));
     if (tokens > 0) await this.assertCanOfferTokens(userId, tokens);
     const isCounter = !!existing;
@@ -506,6 +640,7 @@ export class ChatService {
     const offer = await this.latestOffer(chatId);
     if (!offer || !['PROPOSED', 'COUNTERED'].includes(offer.status)) throw new BadRequestException('No pending offer');
     if (Number(userId) === Number(offer.proposed_by)) throw new BadRequestException('The other person must respond');
+    if (action === 'accepted') await this.assertNoBlockingDuty(userId);
     const skillOffered = String(body.skillOffered || '').trim();
     if (action === 'accepted' && skillOffered && this.banned(skillOffered)) {
       throw new BadRequestException('This activity is not allowed on Skill4Handel');
@@ -520,7 +655,7 @@ export class ChatService {
         const reserved = await client.query(
           `SELECT COALESCE(SUM(extra_tokens), 0)::int AS reserved
            FROM exchange_offers
-           WHERE proposed_by = $1 AND status = 'ACCEPTED' AND COALESCE(settled, FALSE) = FALSE AND id <> $2`,
+           WHERE proposed_by = $1 AND status IN ('ACCEPTED', 'DISPUTED') AND COALESCE(settled, FALSE) = FALSE AND id <> $2`,
           [payerId, offer.id],
         );
         const available = Number(locked.rows[0]?.balance || 0) - Number(reserved.rows[0]?.reserved || 0);
@@ -628,9 +763,12 @@ export class ChatService {
     const doneBy = new Set<number>(offer.done_by || []);
     doneBy.add(Number(userId));
     const both = doneBy.has(Number(chat.user_a_id)) && doneBy.has(Number(chat.user_b_id));
-    await db.query(`UPDATE exchange_offers SET done_by = $1, status = 'ACCEPTED', updated_at = NOW() WHERE id = $2`, [
-      [...doneBy], offer.id,
-    ]);
+    await db.query(
+      `UPDATE exchange_offers
+       SET done_by = $1, status = 'ACCEPTED', first_done_at = CASE WHEN $2::int = 1 THEN COALESCE(first_done_at, NOW()) ELSE first_done_at END, last_reminder_at = CASE WHEN $2::int = 1 THEN COALESCE(last_reminder_at, NOW()) ELSE last_reminder_at END, updated_at = NOW()
+       WHERE id = $3`,
+      [[...doneBy], doneBy.size, offer.id],
+    );
     try {
       await db.query(`INSERT INTO messages (chat_id, from_id, type, text) VALUES ($1, $2, 'text', $3)`, [
         chatId,
