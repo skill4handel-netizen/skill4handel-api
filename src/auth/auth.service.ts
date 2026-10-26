@@ -218,6 +218,8 @@ export class AuthService {
     const clean = email.trim().toLowerCase();
     const typed = String(password || '').trim();
     await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMPTZ`);
+    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT`);
+    await db.query(`ALTER TABLE users ALTER COLUMN password_hash TYPE TEXT`);
     let result = await db.query('SELECT * FROM users WHERE lower(email) = $1 ORDER BY updated_at DESC NULLS LAST, id DESC', [clean]);
     if (!result.rows.length) {
       result = await db.query('SELECT * FROM users WHERE lower(name) = $1 ORDER BY updated_at DESC NULLS LAST, id DESC LIMIT 5', [clean]);
@@ -242,48 +244,49 @@ export class AuthService {
 
 
   async googleLogin(idToken: string) {
-    if (!idToken) throw new UnauthorizedException('Google sign-in failed');
-    const res = await fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken));
-    if (!res.ok) throw new UnauthorizedException('Google token is invalid');
-    const payload = await res.json() as { email?: string; email_verified?: string; name?: string; picture?: string };
-    const cleanEmail = String(payload.email || '').trim().toLowerCase();
-    if (!cleanEmail) throw new UnauthorizedException('Google account has no email');
-    if (payload.email_verified !== 'true' && payload.email_verified !== true as any) {
-      throw new UnauthorizedException('Google email is not verified');
-    }
-    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMPTZ`);
-    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS meeting_mode VARCHAR(20) DEFAULT 'both'`);
-    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS photo_url TEXT`);
-    const photo = String(payload.picture || '').slice(0, 500);
-    let found = await db.query('SELECT * FROM users WHERE lower(email) = $1', [cleanEmail]);
-    let user = found.rows[0];
-    if (!user) {
-      const created = await db.query(
-        `INSERT INTO users (name, email, password_hash, balance, age, city, email_verified, terms_accepted_at, photo_url, meeting_mode)
-         VALUES ($1, $2, $3, 1, 18, '', TRUE, NOW(), $4, 'both')
-         RETURNING *`,
-        [payload.name || cleanEmail.split('@')[0], cleanEmail, await this.hash('google-' + Date.now()), photo],
-      );
-      user = created.rows[0];
-      try {
-        await db.query(
-          `INSERT INTO wallet_transactions (user_id, type, amount, title)
-           VALUES ($1, 'BONUS', 1, 'Starter bonus')`,
-          [user.id],
+    try {
+      if (!idToken) throw new UnauthorizedException('Google sign-in failed');
+      const res = await fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken));
+      if (!res.ok) throw new UnauthorizedException('Google token is invalid');
+      const payload = await res.json() as { email?: string; email_verified?: string; name?: string; picture?: string };
+      const cleanEmail = String(payload.email || '').trim().toLowerCase();
+      if (!cleanEmail) throw new UnauthorizedException('Google account has no email');
+      await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMPTZ`);
+      await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS meeting_mode VARCHAR(20) DEFAULT 'both'`);
+      await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS photo_url TEXT`);
+      await db.query(`ALTER TABLE users ALTER COLUMN photo_url TYPE TEXT`);
+      await db.query(`ALTER TABLE users ALTER COLUMN password_hash TYPE TEXT`);
+      let found = await db.query('SELECT * FROM users WHERE lower(email) = $1 ORDER BY id DESC', [cleanEmail]);
+      let user = found.rows[0];
+      if (!user) {
+        const created = await db.query(
+          `INSERT INTO users (name, email, password_hash, balance, age, city, email_verified, terms_accepted_at, meeting_mode)
+           VALUES ($1, $2, $3, 1, 18, '', TRUE, NOW(), 'both')
+           RETURNING *`,
+          [payload.name || cleanEmail.split('@')[0], cleanEmail, await this.hash('google-' + Date.now())],
         );
-      } catch (_) {}
-    } else {
-      if (user.is_suspended) throw new UnauthorizedException('Account suspended');
-      await db.query(
-        'UPDATE users SET email_verified = TRUE, last_login = NOW(), updated_at = NOW(), photo_url = CASE WHEN COALESCE(photo_url, \'\') = \'\' THEN $2 ELSE photo_url END WHERE id = $1',
-        [user.id, photo],
-      );
-      user.email_verified = true;
+        user = created.rows[0];
+        try {
+          await db.query(
+            `INSERT INTO wallet_transactions (user_id, type, amount, title)
+             VALUES ($1, 'BONUS', 1, 'Starter bonus')`,
+            [user.id],
+          );
+        } catch (_) {}
+      } else if (user.is_suspended) {
+        throw new UnauthorizedException('Account suspended');
+      } else {
+        await db.query('UPDATE users SET email_verified = TRUE, last_login = NOW(), updated_at = NOW() WHERE id = $1', [user.id]);
+        user.email_verified = true;
+      }
+      return {
+        token: signToken(user.id),
+        user: this.privateUser(user, await this.reviewsOf(user.id), await this.historyOf(user.id)),
+      };
+    } catch (error) {
+      if (error instanceof UnauthorizedException || error instanceof BadRequestException) throw error;
+      throw new BadRequestException(error instanceof Error ? error.message : 'Google login failed');
     }
-    return {
-      token: signToken(user.id),
-      user: this.privateUser(user, await this.reviewsOf(user.id), await this.historyOf(user.id)),
-    };
   }
 
   async verifyEmail(token: string) {

@@ -270,7 +270,7 @@ document.addEventListener("click", async function(event){
   if(t.getAttribute("data-suspend")){ await api("/admin/users/"+t.getAttribute("data-suspend")+"/suspend","POST"); return loadUsers(); }
   if(t.getAttribute("data-unsuspend")){ await api("/admin/users/"+t.getAttribute("data-unsuspend")+"/unsuspend","POST"); return loadUsers(); }
   if(t.getAttribute("data-verify")){ await api("/admin/users/"+t.getAttribute("data-verify")+"/verify","POST"); return loadUsers(); }
-  if(t.getAttribute("data-password")){ const password=prompt("New password"); if(password) await api("/admin/users/"+t.getAttribute("data-password")+"/password","POST",{password:password}); }
+  if(t.getAttribute("data-password")){ const password=prompt("New password, at least 8 characters with one letter and one number"); if(password){ const data=await api("/admin/users/"+t.getAttribute("data-password")+"/password","POST",{password:password}); if(data) alert("Password saved for "+(data.email||"this account")+". Use exactly this password in the app."); } }
   if(t.getAttribute("data-wallet")){ const amount=prompt("Amount, for example 10 or -5"); if(amount){ const data=await api("/admin/users/"+t.getAttribute("data-wallet")+"/wallet","POST",{amount:Number(amount),title:"Admin adjustment"}); if(data) alert("Balance "+data.balance);} }
   if(t.getAttribute("data-delete-user")){ if(confirm("Delete this member?")){ await api("/admin/users/"+t.getAttribute("data-delete-user"),"DELETE"); loadUsers(); } }
   if(t.getAttribute("data-open-ticket")) return openTicket(t.getAttribute("data-open-ticket"));

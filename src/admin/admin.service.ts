@@ -551,14 +551,19 @@ export class AdminService {
     if (value.length < 8 || !/[A-Za-z]/.test(value) || !/[0-9]/.test(value)) {
       throw new UnauthorizedException('Use at least 8 characters, including one letter and one number.');
     }
+    await db.query(`ALTER TABLE users ALTER COLUMN password_hash TYPE TEXT`);
     const user = (await db.query('SELECT email FROM users WHERE id = $1', [id])).rows[0];
     if (!user) throw new UnauthorizedException('User not found');
     const hashed = await this.hash(value);
-    await db.query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE lower(email) = lower($2)', [
+    await db.query('UPDATE users SET password_hash = $1, email_verified = TRUE, updated_at = NOW() WHERE lower(email) = lower($2)', [
       hashed,
       user.email,
     ]);
-    return { ok: true, email: user.email };
+    const check = (await db.query('SELECT password_hash FROM users WHERE lower(email) = lower($1) ORDER BY updated_at DESC LIMIT 1', [user.email])).rows[0];
+    if (!check || !(await this.passwordMatches(value, check.password_hash))) {
+      throw new UnauthorizedException('Password was not saved. Try again.');
+    }
+    return { ok: true, email: user.email, saved: true };
   }
 
   async verifyUser(id: number) {
