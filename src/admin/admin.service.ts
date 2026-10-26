@@ -672,7 +672,7 @@ export class AdminService {
   async listReviews() {
     try {
       const result = await db.query(
-        `SELECT r.id, r.rating, r.text, r.skill, r.created_at,
+        `SELECT r.id, r.rating, r.text, r.skill, r.created_at, COALESCE(r.hidden, FALSE) AS hidden,
                 r.from_id, r.to_id, a.name AS from_name, b.name AS to_name
          FROM reviews r
          LEFT JOIN users a ON a.id = r.from_id
@@ -684,6 +684,16 @@ export class AdminService {
     } catch (_) {
       return [];
     }
+  }
+
+
+  async hideReview(id: number) {
+    await db.query(`ALTER TABLE reviews ADD COLUMN IF NOT EXISTS hidden BOOLEAN DEFAULT FALSE`);
+    const review = (await db.query('UPDATE reviews SET hidden = TRUE WHERE id = $1 RETURNING to_id', [id])).rows[0];
+    if (!review) throw new Error('Review not found');
+    const avg = await db.query('SELECT AVG(rating) AS rating FROM reviews WHERE to_id = $1 AND COALESCE(hidden, FALSE) = FALSE', [review.to_id]);
+    await db.query('UPDATE users SET rating = $1 WHERE id = $2', [Number(avg.rows[0].rating || 0).toFixed(1), review.to_id]);
+    return { ok: true };
   }
 
   async cancelExchange(id: number) {

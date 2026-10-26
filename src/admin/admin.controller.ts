@@ -226,7 +226,7 @@ async function loadTickets(){
 }
 async function loadReviews(){
   const rows = await api("/admin/reviews"); if(!rows) return;
-  $("reviews").innerHTML = !rows.length ? "<p>No reviews.</p>" : "<table><tr><th>From</th><th>To</th><th>Stars</th><th>Text</th><th>When</th></tr>"+rows.map(r=>"<tr><td>"+esc(r.from_name||r.from_id)+"</td><td>"+esc(r.to_name||r.to_id)+"</td><td>"+esc(r.rating)+"</td><td>"+esc(r.text)+"</td><td>"+when(r.created_at)+"</td></tr>").join("")+"</table>";
+  $("reviews").innerHTML = !rows.length ? "<p>No reviews.</p>" : "<table><tr><th>From</th><th>To</th><th>Stars</th><th>Text</th><th>When</th><th></th></tr>"+rows.map(r=>"<tr><td>"+esc(r.from_name||r.from_id)+"</td><td>"+esc(r.to_name||r.to_id)+"</td><td>"+esc(r.rating)+"</td><td>"+esc(r.text)+"</td><td>"+when(r.created_at)+"</td><td>"+(r.hidden ? "<span class='badge'>Hidden</span>" : "<button data-hide-review='"+r.id+"'>Hide</button>")+"</td></tr>").join("")+"</table>";
 }
 async function loadActivity(){
   const q = new URLSearchParams({kind:$("actKind").value, from:$("actFrom").value, to:$("actTo").value});
@@ -277,6 +277,7 @@ document.addEventListener("click", async function(event){
   if(t.getAttribute("data-close-ticket")){ await api("/admin/tickets/"+t.getAttribute("data-close-ticket")+"/close","POST"); return loadTickets(); }
   if(t.getAttribute("data-delete-ticket")){ if(confirm("Delete this ticket?")){ await api("/admin/tickets/"+t.getAttribute("data-delete-ticket"),"DELETE"); loadTickets(); } }
   if(t.getAttribute("data-cancel-offer")){ if(confirm("Cancel this offer?")){ await api("/admin/exchanges/"+t.getAttribute("data-cancel-offer")+"/cancel","POST"); loadExchanges(); } }
+  if(t.getAttribute("data-hide-review")){ if(confirm("Hide this review from profiles?")){ await api("/admin/reviews/"+t.getAttribute("data-hide-review")+"/hide","POST"); loadReviews(); } }
 });
 $("ticketFilter").addEventListener("change", loadTickets);
 $("offerFilter").addEventListener("change", loadExchanges);
@@ -424,6 +425,12 @@ if(token()){ $("login").className="hide"; $("app").className="shell"; show("over
   async reviews(@Req() req: any) {
     await requireAdmin(req);
     return this.adminService.listReviews();
+  }
+
+  @Post('reviews/:id/hide')
+  async hideReview(@Req() req: any, @Param('id') id: string) {
+    await requireAdmin(req);
+    return this.adminService.hideReview(Number(id));
   }
 
   @Get('exchanges')

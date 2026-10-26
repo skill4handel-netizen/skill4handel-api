@@ -51,19 +51,6 @@ export class AuthService {
     `);
   }
 
-
-  private async withTokenState(user: any) {
-    const reserved = await db.query(
-      `SELECT COALESCE(SUM(extra_tokens), 0)::int AS reserved
-       FROM exchange_offers
-       WHERE proposed_by = $1 AND status IN ('ACCEPTED', 'DISPUTED') AND COALESCE(settled, FALSE) = FALSE`,
-      [user.id],
-    );
-    const held = Number(reserved.rows[0]?.reserved || 0);
-    const balance = Number(user.balance || 0);
-    return { ...user, reserved: held, available: Math.max(0, balance - held) };
-  }
-
   private publicUser(user: any, reviews: any[] = [], history: any[] = []) {
     const rating = reviews.length
       ? Number((reviews.reduce((sum, item) => sum + Number(item.rating), 0) / reviews.length).toFixed(1))
@@ -79,8 +66,6 @@ export class AuthService {
       gender: user.gender || '',
       age: Number(user.age || 0),
       balance: Number(user.balance || 0),
-      reserved: Number(user.reserved || 0),
-      available: Number(user.available ?? user.balance ?? 0),
       history,
       reviews,
       rating,
@@ -95,10 +80,11 @@ export class AuthService {
 
   private async reviewsOf(userId: number) {
     const result = await db.query(
-      'SELECT from_id, from_name, rating, text, skill FROM reviews WHERE to_id = $1 ORDER BY created_at DESC',
+      'SELECT id, from_id, from_name, rating, text, skill FROM reviews WHERE to_id = $1 AND COALESCE(hidden, FALSE) = FALSE ORDER BY created_at DESC',
       [userId],
     );
     return result.rows.map((row: any) => ({
+      id: row.id,
       fromId: row.from_id,
       fromName: row.from_name,
       rating: Number(row.rating),
@@ -157,8 +143,7 @@ export class AuthService {
     const result = await db.query('SELECT * FROM users WHERE id = $1', [userId]);
     const user = result.rows[0];
     if (!user) throw new UnauthorizedException('User not found');
-    const ready = await this.withTokenState(user);
-    return this.privateUser(ready, await this.reviewsOf(user.id), await this.historyOf(user.id));
+    return this.privateUser(user, await this.reviewsOf(user.id), await this.historyOf(user.id));
   }
 
   async signup(name: string, email: string, password: string, age?: number, acceptedTerms?: boolean, city?: string, phone?: string, accessibility?: boolean, birthDate?: string, language?: string) {
@@ -235,10 +220,9 @@ export class AuthService {
     if (!user.email_verified) throw new UnauthorizedException('Email not verified');
     await this.upgradeHash(user.id, password, user.password_hash);
     await db.query('UPDATE users SET last_login = NOW(), updated_at = NOW() WHERE id = $1', [user.id]);
-    const ready = await this.withTokenState(user);
     return {
       token: signToken(user.id),
-      user: this.privateUser(ready, await this.reviewsOf(user.id), await this.historyOf(user.id)),
+      user: this.privateUser(user, await this.reviewsOf(user.id), await this.historyOf(user.id)),
     };
   }
 
@@ -435,17 +419,48 @@ export class AuthService {
     if (recent.rows[0]) {
       throw new BadRequestException('You can review this person once every 24 hours.');
     }
+    await db.query(`ALTER TABLE reviews ADD COLUMN IF NOT EXISTS hidden BOOLEAN DEFAULT FALSE`);
     await db.query(
       `INSERT INTO reviews (from_id, to_id, from_name, rating, text, skill)
        VALUES ($1, $2, $3, $4, $5, $6)`,
       [fromId, toId, body.fromName, body.rating, body.text || '', body.skill || ''],
     );
-    const avg = await db.query('SELECT AVG(rating) AS rating FROM reviews WHERE to_id = $1', [toId]);
+    const avg = await db.query('SELECT AVG(rating) AS rating FROM reviews WHERE to_id = $1 AND COALESCE(hidden, FALSE) = FALSE', [toId]);
     await db.query('UPDATE users SET rating = $1 WHERE id = $2', [
       Number(avg.rows[0].rating || 0).toFixed(1),
       toId,
     ]);
     return this.me(toId);
+  }
+
+
+  async reportReview(userId: number, reviewId: number, reason: string) {
+    await db.query(`ALTER TABLE reviews ADD COLUMN IF NOT EXISTS hidden BOOLEAN DEFAULT FALSE`);
+    const review = (await db.query(
+      `SELECT r.*, a.name AS from_name, b.name AS to_name
+       FROM reviews r
+       LEFT JOIN users a ON a.id = r.from_id
+       LEFT JOIN users b ON b.id = r.to_id
+       WHERE r.id = $1`,
+      [reviewId],
+    )).rows[0];
+    if (!review) throw new BadRequestException('Review not found');
+    const reporter = (await db.query('SELECT name FROM users WHERE id = $1', [userId])).rows[0];
+    const text = [
+      'Review report',
+      `Review #${review.id}`,
+      `From: ${review.from_name || review.from_id}`,
+      `To: ${review.to_name || review.to_id}`,
+      `Stars: ${review.rating}`,
+      `Text: ${review.text || ''}`,
+      `Reason: ${reason || 'Not specified'}`,
+    ].join('\n');
+    await db.query(
+      `INSERT INTO tickets (user_id, name, type, other_name, text, status)
+       VALUES ($1, $2, 'review_report', $3, $4, 'open')`,
+      [userId, reporter?.name || 'Member', review.from_name || 'Member', text],
+    );
+    return { ok: true };
   }
 
   async transfer(body: { fromId: number; toId: number; amount: number; title: string }) {

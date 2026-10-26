@@ -176,6 +176,11 @@ export class AuthController {
     return this.authService.addReview({ ...body, fromId: userIdFromRequest(req) });
   }
 
+  @Post('review/report')
+  reportReview(@Req() req: any, @Body() body: any) {
+    return this.authService.reportReview(userIdFromRequest(req), Number(body.reviewId), String(body.reason || ''));
+  }
+
   @Post('transfer')
   transfer(@Req() req: any, @Body() body: any) {
     return this.authService.transfer({ ...body, fromId: userIdFromRequest(req), userId: userIdFromRequest(req) });
