@@ -700,16 +700,16 @@ export class ChatService {
           ? `The offer has been accepted. Return skill: ${skillOffered}.`
           : 'The offer has been accepted. The session is confirmed.')
       : 'The offer has been declined.';
+    const chat = (await db.query('SELECT * FROM chats WHERE id = $1', [chatId])).rows[0];
     try {
       await db.query(`INSERT INTO messages (chat_id, from_id, type, text) VALUES ($1, $2, 'text', $3)`, [
         chatId, userId, text,
       ]);
-      await this.alertBoth(chat, action === 'accepted' ? 'Offer accepted' : 'Offer declined', text, 'system');
+      if (chat) await this.alertBoth(chat, action === 'accepted' ? 'Offer accepted' : 'Offer declined', text, 'system');
     } catch (_) {}
     await db.query('UPDATE chats SET last_message = $1, last_from_id = $2, updated_at = NOW() WHERE id = $3', [
       action === 'accepted' ? 'Offer accepted' : 'Offer declined', userId, chatId,
     ]);
-    const chat = (await db.query('SELECT * FROM chats WHERE id = $1', [chatId])).rows[0];
     if (chat) {
       const senderName = Number(chat.user_a_id) === Number(userId) ? chat.name_a : chat.name_b;
       await this.alert(Number(offer.proposed_by), action === 'accepted' ? 'Offer accepted' : 'Offer declined', action === 'accepted' ? 'Your offer has been accepted.' : 'Your offer has been declined.', 'offer', chatId, userId, senderName);
@@ -735,17 +735,17 @@ export class ChatService {
       throw new BadRequestException('This offer cannot be cancelled');
     }
     await db.query(`UPDATE exchange_offers SET status = 'CANCELLED', updated_at = NOW() WHERE id = $1`, [offer.id]);
+    const chat = chatRow || (await db.query('SELECT * FROM chats WHERE id = $1', [chatId])).rows[0];
     try {
       await db.query(`INSERT INTO messages (chat_id, from_id, type, text) VALUES ($1, $2, 'text', $3)`, [
         chatId, userId, 'The offer was cancelled. Both members may start a new request.',
       ]);
-      await this.alertBoth(chat, 'Offer cancelled', 'The offer was cancelled. Both members may start a new request.', 'system');
+      if (chat) await this.alertBoth(chat, 'Offer cancelled', 'The offer was cancelled. Both members may start a new request.', 'system');
     } catch (_) {}
     await db.query(
       'UPDATE chats SET last_message = $1, last_from_id = $2, updated_at = NOW() WHERE id = $3',
       ['Offer cancelled. A new request may be started.', userId, chatId],
     );
-    const chat = (await db.query('SELECT * FROM chats WHERE id = $1', [chatId])).rows[0];
     if (chat) {
       await this.ping(
         this.otherId(chat, userId),
