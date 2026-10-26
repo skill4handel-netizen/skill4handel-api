@@ -60,6 +60,8 @@ export class AuthService {
       name: user.name,
       email: user.email,
       city: user.city || '',
+      cityChangedAt: user.city_changed_at || '',
+      meetingMode: user.meeting_mode || 'both',
       offers: user.offers || '',
       needs: user.needs || '',
       photoUrl: user.photo_url || '',
@@ -146,22 +148,25 @@ export class AuthService {
     return this.privateUser(user, await this.reviewsOf(user.id), await this.historyOf(user.id));
   }
 
-  async signup(name: string, email: string, password: string, age?: number, acceptedTerms?: boolean, city?: string, phone?: string, accessibility?: boolean, birthDate?: string, language?: string) {
+  async signup(name: string, email: string, password: string, age?: number, acceptedTerms?: boolean, city?: string, phone?: string, accessibility?: boolean, birthDate?: string, language?: string, offers?: string) {
     this.assertPassword(password);
     if (!acceptedTerms) throw new BadRequestException('You must accept the terms');
     await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(40)`);
     await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS accessibility BOOLEAN DEFAULT FALSE`);
     await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS language VARCHAR(10)`);
     await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_date DATE`);
+    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS city_changed_at TIMESTAMPTZ`);
+    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS meeting_mode VARCHAR(20) DEFAULT 'both'`);
     if (Number(age || 0) < 18) throw new BadRequestException('You must be 18 or older');
+    if (!String(offers || '').trim()) throw new BadRequestException('Choose at least one skill you can offer.');
     const cleanEmail = email.trim().toLowerCase();
     const exists = await db.query('SELECT id FROM users WHERE email = $1', [cleanEmail]);
     if (exists.rows[0]) throw new BadRequestException('This email is already registered');
     const created = await db.query(
-      `INSERT INTO users (name, email, password_hash, balance, age, city, terms_accepted_at, phone, accessibility, language, birth_date)
-       VALUES ($1, $2, $3, 1, $4, $5, NOW(), $6, $7, $8, $9)
+      `INSERT INTO users (name, email, password_hash, balance, age, city, offers, terms_accepted_at, phone, accessibility, language, birth_date, city_changed_at, meeting_mode)
+       VALUES ($1, $2, $3, 1, $4, $5, $6, NOW(), $7, $8, $9, $10, NOW(), 'both')
        RETURNING *`,
-      [name, cleanEmail, await this.hash(password), Number(age), (city || '').trim(), (phone || '').trim(), !!accessibility, language === 'nl' ? 'nl' : 'en', birthDate || null],
+      [name, cleanEmail, await this.hash(password), Number(age), (city || '').trim(), String(offers || '').trim(), (phone || '').trim(), !!accessibility, language === 'nl' ? 'nl' : 'en', birthDate || null],
     );
     const user = created.rows[0];
     await db.query(
@@ -351,6 +356,7 @@ export class AuthService {
     gender?: string;
     age?: number;
     language?: string;
+    meetingMode?: string;
   }) {
     const age = Number(body.age || 0);
     if (age > 0 && age < 18) {
@@ -358,14 +364,25 @@ export class AuthService {
     }
     const language = body.language === 'nl' ? 'nl' : 'en';
     await db.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS language VARCHAR(8) DEFAULT 'en'");
+    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS city_changed_at TIMESTAMPTZ`);
+    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS meeting_mode VARCHAR(20) DEFAULT 'both'`);
+    if (!String(body.offers || '').trim()) throw new BadRequestException('Choose at least one skill you can offer.');
+    const current = (await db.query('SELECT city, city_changed_at FROM users WHERE id = $1', [body.id])).rows[0];
+    const nextCity = String(body.city || '').trim();
+    const cityChanged = current && nextCity && nextCity !== String(current.city || '');
+    if (cityChanged && current.city_changed_at) {
+      const days = (Date.now() - new Date(current.city_changed_at).getTime()) / 864e5;
+      if (days < 30) throw new BadRequestException('You can change your city once every 30 days.');
+    }
     const result = await db.query(
       `UPDATE users
        SET name = $1,
-           city = CASE WHEN COALESCE(city, '') = '' THEN $2 ELSE city END,
-           offers = $3, needs = $4, gender = $5, age = $6, language = $7, updated_at = NOW()
-       WHERE id = $8
+           city = $2,
+           city_changed_at = CASE WHEN city IS DISTINCT FROM $2 THEN NOW() ELSE city_changed_at END,
+           offers = $3, needs = $4, gender = $5, age = $6, language = $7, meeting_mode = $8, updated_at = NOW()
+       WHERE id = $9
        RETURNING *`,
-      [body.name, body.city, body.offers, body.needs, body.gender || '', age || null, language, body.id],
+      [body.name, nextCity, body.offers, body.needs, body.gender || '', age || null, language, body.meetingMode || 'both', body.id],
     );
     const user = result.rows[0];
     if (!user) throw new UnauthorizedException('User not found');
@@ -413,11 +430,11 @@ export class AuthService {
     }
     const recent = await db.query(
       `SELECT id FROM reviews
-       WHERE from_id = $1 AND to_id = $2 AND created_at > NOW() - INTERVAL '24 hours'`,
+       WHERE from_id = $1 AND to_id = $2 AND created_at > NOW() - INTERVAL '14 days'`,
       [fromId, toId],
     );
     if (recent.rows[0]) {
-      throw new BadRequestException('You can review this person once every 24 hours.');
+      throw new BadRequestException('You can leave one review for this person every 14 days.');
     }
     await db.query(`ALTER TABLE reviews ADD COLUMN IF NOT EXISTS hidden BOOLEAN DEFAULT FALSE`);
     await db.query(

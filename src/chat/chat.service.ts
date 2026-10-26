@@ -559,11 +559,6 @@ export class ChatService {
       const hours = (Date.now() - new Date(lastDone.updated_at).getTime()) / 36e5;
       if (hours < 24) throw new BadRequestException('You can start another swap with this person after 24 hours.');
     }
-    const weekCount = pair.rows.filter((row: any) => {
-      if (!['SETTLED', 'REVIEWED'].includes(row.status)) return false;
-      return (Date.now() - new Date(row.updated_at).getTime()) / 864e5 <= 7;
-    }).length;
-    if (weekCount >= 3) throw new BadRequestException('Maximum 3 completed swaps with this person per week.');
     if (pair.rows.some((row: any) => row.status === 'ACCEPTED')) {
       throw new BadRequestException('Finish the open session with this person before starting another exchange.');
     }

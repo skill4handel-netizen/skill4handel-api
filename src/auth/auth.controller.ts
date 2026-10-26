@@ -47,6 +47,7 @@ export class AuthController {
       body.accessibility,
       body.birthDate,
       body.language,
+      body.offers,
     );
   }
 
