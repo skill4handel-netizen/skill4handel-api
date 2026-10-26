@@ -143,6 +143,7 @@ export class AdminService {
         COUNT(*) FILTER (WHERE status IS NULL OR status <> 'closed')::int AS open
       FROM tickets
     `);
+    await this.closeStaleOffers();
     const offers = await db.query(`
       SELECT
         COUNT(*)::int AS total,
@@ -702,12 +703,50 @@ export class AdminService {
     return { ok: true };
   }
 
+  private async closeStaleOffers() {
+    await db.query(
+      `UPDATE exchange_offers e
+       SET status = 'REJECTED', updated_at = NOW()
+       WHERE e.status IN ('PROPOSED', 'COUNTERED')
+         AND EXISTS (
+           SELECT 1 FROM messages m
+           WHERE m.chat_id = e.chat_id
+             AND m.created_at >= e.created_at
+             AND (
+               m.text ILIKE '%offer has been declined%'
+               OR m.text ILIKE '%offer declined%'
+               OR m.text ILIKE '%aanbod afgewezen%'
+             )
+         )`,
+    );
+    await db.query(
+      `UPDATE exchange_offers
+       SET status = 'CANCELLED', updated_at = NOW()
+       WHERE status IN ('PROPOSED', 'COUNTERED')
+         AND (
+           created_at <= NOW() - INTERVAL '24 hours'
+           OR (scheduled_at IS NOT NULL AND scheduled_at <= NOW())
+         )`,
+    );
+  }
+
   async listExchanges(status = '') {
-    const filter = status ? 'WHERE e.status = $1' : '';
-    const params = status ? [status.toUpperCase()] : [];
+    await this.closeStaleOffers();
+    const wanted = String(status || '').trim().toUpperCase();
+    const params: any[] = [];
+    let filter = '';
+    if (wanted === 'PENDING') {
+      filter = `WHERE e.status IN ('PROPOSED', 'COUNTERED')`;
+    } else if (wanted === 'COMPLETED') {
+      filter = `WHERE e.status IN ('SETTLED', 'REVIEWED')`;
+    } else if (wanted) {
+      params.push(wanted);
+      filter = 'WHERE e.status = $1';
+    }
     const result = await db.query(
       `SELECT e.id, e.status, e.skill_requested, e.skill_offered, e.pay_with_tokens,
-              e.extra_tokens, e.settled, e.created_at, c.user_a_id, c.user_b_id, c.name_a, c.name_b
+              e.extra_tokens, e.settled, e.created_at, e.updated_at, e.scheduled_at,
+              c.user_a_id, c.user_b_id, c.name_a, c.name_b
        FROM exchange_offers e
        JOIN chats c ON c.id = e.chat_id
        ${filter}

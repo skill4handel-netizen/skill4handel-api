@@ -102,7 +102,7 @@ export class AdminController {
         <div id="users"></div>
       </div>
     </section>
-    <section id="tab-exchanges" class="hide"><div class="card"><div class="row"><select id="offerFilter"><option value="">All statuses</option><option value="pending">Pending</option><option>PROPOSED</option><option>COUNTERED</option><option>ACCEPTED</option><option>CANCELLED</option><option value="completed">Completed</option><option>SETTLED</option><option>REVIEWED</option></select><button id="exportExchanges" type="button">Export Excel</button></div><div id="exchanges"></div></div></section>
+    <section id="tab-exchanges" class="hide"><div class="card"><div class="row"><select id="offerFilter"><option value="">All statuses</option><option value="pending">Pending</option><option>PROPOSED</option><option>COUNTERED</option><option>ACCEPTED</option><option>REJECTED</option><option>CANCELLED</option><option value="completed">Completed</option><option>SETTLED</option><option>REVIEWED</option></select><button id="exportExchanges" type="button">Export Excel</button></div><div id="exchanges"></div></div></section>
     <section id="tab-tickets" class="hide"><div class="card"><div class="row"><select id="ticketFilter"><option value="">All</option><option value="open">Open</option><option value="closed">Closed</option></select></div><div id="tickets"></div></div></section>
     <section id="tab-reviews" class="hide"><div class="card" id="reviews"></div></section>
     <section id="tab-activity" class="hide"><div class="card"><div class="row"><input id="actFrom" type="date" /><input id="actTo" type="date" /><select id="actKind"><option value="">All events</option><option value="signup">Signups</option><option value="offer">Offers</option><option value="message">Messages</option><option value="review">Reviews</option><option value="ticket">Tickets</option><option value="wallet">Wallet</option><option value="admin">Admin changes</option></select><button id="actBtn" class="primary" type="button">Show</button><button id="actExport" type="button">Export Excel</button></div><div id="activity"></div></div></section>
@@ -233,13 +233,14 @@ async function openUser(id){
   $("userActivity").textContent = JSON.stringify(data.activity||{}, null, 2);
   $("userBox").showModal();
 }
+function rowOpen(r){ return r.status==="PROPOSED" || r.status==="COUNTERED" || r.status==="ACCEPTED"; }
 async function loadExchanges(){
   const wanted = $("offerFilter").value;
-  const status = wanted==="pending" || wanted==="completed" ? "" : wanted;
+  const status = wanted;
   let rows = await api("/admin/exchanges?status="+status); if(!rows) return;
   if(wanted==="pending") rows = rows.filter(function(row){ return row.status==="PROPOSED" || row.status==="COUNTERED"; });
   if(wanted==="completed") rows = rows.filter(function(row){ return row.status==="SETTLED" || row.status==="REVIEWED"; });
-  $("exchanges").innerHTML = !rows.length ? "<p>No exchanges.</p>" : "<table><tr><th>Members</th><th>Requested</th><th>Offered</th><th>Tokens</th><th>Status</th><th>When</th><th></th></tr>"+rows.map(r=>"<tr><td>"+esc(r.name_a)+" / "+esc(r.name_b)+"</td><td>"+esc(r.skill_requested)+"</td><td>"+esc(r.skill_offered)+"</td><td>"+esc(r.extra_tokens)+"</td><td><span class='badge'>"+esc(r.status)+"</span></td><td>"+when(r.created_at)+"</td><td><button class='danger' data-cancel-offer='"+r.id+"'>Cancel</button></td></tr>").join("")+"</table>";
+  $("exchanges").innerHTML = !rows.length ? "<p>No exchanges.</p>" : "<table><tr><th>Members</th><th>Requested</th><th>Offered</th><th>Tokens</th><th>Status</th><th>Updated</th><th></th></tr>"+rows.map(r=>"<tr><td>"+esc(r.name_a)+" / "+esc(r.name_b)+"</td><td>"+esc(r.skill_requested)+"</td><td>"+esc(r.skill_offered)+"</td><td>"+esc(r.extra_tokens)+"</td><td><span class='badge'>"+esc(r.status)+"</span></td><td>"+when(r.updated_at || r.created_at)+"</td><td>"+(rowOpen(r)?"<button class='danger' data-cancel-offer='"+r.id+"'>Cancel</button>":"")+"</td></tr>").join("")+"</table>";
 }
 async function loadTickets(){
   const rows = await api("/admin/tickets?status="+$("ticketFilter").value); if(!rows) return;
