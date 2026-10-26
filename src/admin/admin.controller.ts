@@ -69,7 +69,10 @@ export class AdminController {
     <p class="muted">Administration</p>
     <label>Email</label><input id="email" type="email" />
     <label>Password</label><input id="password" type="password" />
-    <div class="row"><button id="loginBtn" class="primary" type="button">Sign in</button><button id="forgotBtn" type="button">Reset password</button></div>
+    <div id="codeBox" class="hide">
+      <label>Email code</label><input id="code" inputmode="numeric" maxlength="6" placeholder="6-digit code" />
+    </div>
+    <div class="row"><button id="loginBtn" class="primary" type="button">Sign in</button><button id="codeBtn" class="primary hide" type="button">Confirm code</button><button id="forgotBtn" type="button">Reset password</button></div>
     <div id="error" class="error"></div>
   </div>
 </div>
@@ -144,12 +147,30 @@ function download(kind, extra){
   });
 }
 async function login(){
-  $("error").textContent = "Signing in...";
+  $("error").textContent = "Checking password...";
   try {
     localStorage.removeItem("adminToken");
     const res = await fetch("/admin/login", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({email:$("email").value.trim(), password:$("password").value})});
     const data = await res.json().catch(function(){ return {}; });
-    if(!res.ok || !data.token){ $("error").textContent = data.message || "Login failed"; return; }
+    if(!res.ok){ $("error").textContent = data.message || "Login failed"; return; }
+    if(data.needCode){
+      $("codeBox").className = "";
+      $("loginBtn").className = "hide";
+      $("codeBtn").className = "primary";
+      $("error").textContent = "A 6-digit code was sent to your email. Enter it below.";
+      return;
+    }
+    if(!data.token){ $("error").textContent = "Login failed"; return; }
+    localStorage.setItem("adminToken", data.token);
+    $("login").className = "hide"; $("app").className = "shell"; show("overview");
+  } catch(e){ $("error").textContent = "Could not reach the server."; }
+}
+async function confirmCode(){
+  $("error").textContent = "Checking code...";
+  try {
+    const res = await fetch("/admin/login/code", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({email:$("email").value.trim(), code:$("code").value.trim()})});
+    const data = await res.json().catch(function(){ return {}; });
+    if(!res.ok || !data.token){ $("error").textContent = data.message || "Wrong code"; return; }
     localStorage.setItem("adminToken", data.token);
     $("login").className = "hide"; $("app").className = "shell"; show("overview");
   } catch(e){ $("error").textContent = "Could not reach the server."; }
@@ -242,6 +263,7 @@ async function openTicket(id){ currentTicket=id; const row=await api("/admin/tic
 document.addEventListener("click", async function(event){
   const t = event.target.closest ? event.target.closest("button") : event.target; if(!t) return;
   if(t.id==="loginBtn") return login();
+  if(t.id==="codeBtn") return confirmCode();
   if(t.id==="forgotBtn") return fetch("/admin/recover",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:$("email").value.trim()})}).then(()=>{$("error").textContent="Reset requested.";});
   if(t.id==="logoutBtn"){ localStorage.removeItem("adminToken"); location.reload(); }
   if(t.getAttribute("data-jump")){
@@ -292,6 +314,12 @@ if(token()){ $("login").className="hide"; $("app").className="shell"; show("over
   login(@Req() req: any, @Body() body: { email: string; password: string }) {
     enforceThrottle(req, 'admin-login', 30, 10 * 60 * 1000);
     return this.adminService.login(body.email, body.password);
+  }
+
+  @Post('login/code')
+  confirmCode(@Req() req: any, @Body() body: { email: string; code: string }) {
+    enforceThrottle(req, 'admin-code', 20, 10 * 60 * 1000);
+    return this.adminService.confirmCode(body.email, body.code);
   }
 
   @Post('recover')

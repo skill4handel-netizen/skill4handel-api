@@ -64,3 +64,35 @@ export async function sendResetEmail(to: string, token: string) {
   }
   return link;
 }
+
+export async function sendAdminCode(to: string, code: string) {
+  const key = process.env.RESEND_API_KEY || '';
+  const from = process.env.MAIL_FROM || 'Skill4Handel <info@skill4handel.com>';
+  if (!key) {
+    console.log(`ADMIN CODE for ${to}: ${code}`);
+    return false;
+  }
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${key}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from,
+        to,
+        subject: 'Your Skill4Handel admin sign-in code',
+        html: `<p>Your admin sign-in code is:</p><p style="font-size:28px;font-weight:800;letter-spacing:4px">${code}</p><p>It expires in 10 minutes. If you did not try to sign in, ignore this message.</p>`,
+      }),
+    });
+    if (!res.ok) {
+      console.log('ADMIN MAIL FAIL', res.status, await res.text());
+      return false;
+    }
+    return true;
+  } catch (error) {
+    console.log('ADMIN MAIL ERROR', error);
+    return false;
+  }
+}

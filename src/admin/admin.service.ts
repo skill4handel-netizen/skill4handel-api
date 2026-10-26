@@ -3,6 +3,7 @@ import { createHash } from 'crypto';
 import * as bcrypt from 'bcryptjs';
 import { db } from '../db';
 import { signToken } from '../auth/token';
+import { sendAdminCode } from '../mail';
 
 @Injectable()
 export class AdminService {
@@ -59,6 +60,43 @@ export class AdminService {
         user.id,
       ]);
     }
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    await db.query(`CREATE TABLE IF NOT EXISTS admin_codes (
+      email VARCHAR(180) PRIMARY KEY,
+      code_hash VARCHAR(64) NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0
+    )`);
+    await db.query(
+      `INSERT INTO admin_codes (email, code_hash, expires_at, attempts)
+       VALUES ($1, $2, NOW() + INTERVAL '10 minutes', 0)
+       ON CONFLICT (email) DO UPDATE SET code_hash = $2, expires_at = NOW() + INTERVAL '10 minutes', attempts = 0`,
+      [clean, this.sha256(code)],
+    );
+    const sent = await sendAdminCode(clean, code);
+    if (!sent) {
+      throw new UnauthorizedException('The sign-in code could not be emailed. Check the mail settings.');
+    }
+    return { needCode: true, email: clean };
+  }
+
+  async confirmCode(email: string, code: string) {
+    const clean = String(email || '').trim().toLowerCase();
+    const entered = String(code || '').trim();
+    const row = (await db.query('SELECT * FROM admin_codes WHERE email = $1', [clean])).rows[0];
+    if (!row || new Date(row.expires_at).getTime() < Date.now()) {
+      throw new UnauthorizedException('The code has expired. Sign in again.');
+    }
+    if (Number(row.attempts) >= 5) {
+      throw new UnauthorizedException('Too many wrong codes. Sign in again.');
+    }
+    if (this.sha256(entered) !== row.code_hash) {
+      await db.query('UPDATE admin_codes SET attempts = attempts + 1 WHERE email = $1', [clean]);
+      throw new UnauthorizedException('Wrong code');
+    }
+    await db.query('DELETE FROM admin_codes WHERE email = $1', [clean]);
+    const user = (await db.query('SELECT * FROM users WHERE email = $1', [clean])).rows[0];
+    if (!user || user.role !== 'admin') throw new UnauthorizedException('Not an admin');
     return {
       token: signToken(user.id),
       user: { id: user.id, name: user.name, email: user.email, role: user.role },
