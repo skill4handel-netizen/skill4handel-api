@@ -81,16 +81,49 @@ export class AuthService {
 
   private async reviewsOf(userId: number) {
     const result = await db.query(
-      'SELECT from_id, from_name, rating, text, skill FROM reviews WHERE to_id = $1 ORDER BY created_at DESC',
+      'SELECT id, from_id, to_id, from_name, rating, text, skill, created_at FROM reviews WHERE to_id = $1 ORDER BY created_at DESC',
       [userId],
     );
     return result.rows.map((row: any) => ({
+      id: row.id,
       fromId: row.from_id,
+      toId: row.to_id,
       fromName: row.from_name,
       rating: Number(row.rating),
       text: row.text,
       skill: row.skill,
+      createdAt: row.created_at,
     }));
+  }
+
+  async reportReview(userId: number, reviewId: number, reason: string) {
+    const found = await db.query('SELECT * FROM reviews WHERE id = $1', [reviewId]);
+    const review = found.rows[0];
+    if (!review) throw new BadRequestException('Review not found');
+    const fromId = Number(review.from_id);
+    const toId = Number(review.to_id);
+    if (Number(userId) !== fromId && Number(userId) !== toId) {
+      throw new BadRequestException('Only the two members of this review can report it');
+    }
+    const mutual = await db.query(
+      `SELECT id FROM reviews WHERE from_id = $1 AND to_id = $2 LIMIT 1`,
+      [toId, fromId],
+    );
+    if (!mutual.rows[0]) {
+      throw new BadRequestException('Both members must have reviewed each other');
+    }
+    const age = Date.now() - new Date(review.created_at).getTime();
+    if (age > 24 * 60 * 60 * 1000) {
+      throw new BadRequestException('Review report is only available for 24 hours');
+    }
+    const text = (reason || '').trim();
+    if (!text) throw new BadRequestException('Please write a reason');
+    await db.query(
+      `INSERT INTO tickets (user_id, name, type, other_name, text)
+       VALUES ($1, $2, 'review-report', $3, $4)`,
+      [userId, '', review.from_name || '', text],
+    );
+    return { ok: true };
   }
 
   private async historyOf(userId: number) {

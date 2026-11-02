@@ -172,6 +172,15 @@ export class AuthController {
     return this.authService.setPhoto(userIdFromRequest(req), body.photoUrl);
   }
 
+  @Post('review/report')
+  reportReview(@Req() req: any, @Body() body: any) {
+    return this.authService.reportReview(
+      userIdFromRequest(req),
+      Number(body.reviewId),
+      body.reason || body.text || '',
+    );
+  }
+
   @Post('review')
   review(@Req() req: any, @Body() body: any) {
     return this.authService.addReview({ ...body, fromId: userIdFromRequest(req) });
