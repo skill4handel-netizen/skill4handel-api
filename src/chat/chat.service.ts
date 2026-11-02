@@ -175,7 +175,7 @@ export class ChatService {
     await db.query(`UPDATE exchange_offers SET status = 'CANCELLED', updated_at = NOW() WHERE id = $1`, [offer.id]);
     const reason = unansweredTimePassed
       ? 'The offer expired because the scheduled time passed without a response. Both members may start a new request.'
-      : 'The offer was cancelled automatically because no response was received within 24 hours. Both members may start a new request.';
+      : 'The 24-hour response period ended. This offer was cancelled automatically. It can no longer be edited.';
     try {
       await db.query(`INSERT INTO messages (chat_id, from_id, type, text) VALUES ($1, $2, 'text', $3)`, [
         chat.id,
@@ -272,12 +272,31 @@ export class ChatService {
        ORDER BY e.updated_at DESC`,
       [userId],
     );
-    return result.rows.map((row: any) => ({
+    const offers = result.rows.map((row: any) => ({
       ...this.packOffer(row, row),
       chatId: row.chat_id,
       otherName: Number(row.user_a_id) === userId ? row.name_b : row.name_a,
       otherId: Number(row.user_a_id) === userId ? row.user_b_id : row.user_a_id,
     }));
+    try {
+      const logs = await db.query(
+        `SELECT id, other_id, other_name, title, body, created_at FROM activity_log WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100`,
+        [userId],
+      );
+      for (const row of logs.rows) {
+        offers.push({
+          id: `log-${row.id}`,
+          chatId: 0,
+          otherId: row.other_id,
+          otherName: row.other_name,
+          status: 'cancelled',
+          skillRequested: row.title,
+          skillOffered: row.body,
+          createdAt: row.created_at,
+        });
+      }
+    } catch (_) {}
+    return offers;
   }
 
   async list(userId: number) {
@@ -663,6 +682,23 @@ export class ChatService {
     if (hadOffer && offer) {
       await db.query(`UPDATE exchange_offers SET status = 'CANCELLED', updated_at = NOW() WHERE id = $1`, [offer.id]);
     }
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS activity_log (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        other_id INTEGER,
+        other_name TEXT,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    const otherName = Number(chat.user_a_id) === Number(userId) ? chat.name_b : chat.name_a;
+    const myName = Number(chat.user_a_id) === Number(userId) ? chat.name_a : chat.name_b;
+    await db.query(
+      `INSERT INTO activity_log (user_id, other_id, other_name, title, body) VALUES ($1,$2,$3,$4,$5), ($6,$7,$8,$4,$5)`,
+      [userId, other, otherName, 'Chat deleted', note, other, userId, myName],
+    );
     await db.query('DELETE FROM messages WHERE chat_id = $1', [chatId]);
     await db.query('DELETE FROM exchange_offers WHERE chat_id = $1', [chatId]);
     await db.query('DELETE FROM chats WHERE id = $1', [chatId]);
