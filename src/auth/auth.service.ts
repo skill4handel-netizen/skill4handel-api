@@ -60,8 +60,6 @@ export class AuthService {
       name: user.name,
       email: user.email,
       city: user.city || '',
-      cityChangedAt: user.city_changed_at || '',
-      meetingMode: user.meeting_mode || 'both',
       offers: user.offers || '',
       needs: user.needs || '',
       photoUrl: user.photo_url || '',
@@ -73,6 +71,7 @@ export class AuthService {
       rating,
       emailVerified: !!user.email_verified,
       accessibility: !!user.accessibility,
+      willingVolunteer: !!user.willing_volunteer,
     };
   }
 
@@ -81,39 +80,29 @@ export class AuthService {
   }
 
   private async reviewsOf(userId: number) {
-    try {
-      await db.query(`ALTER TABLE reviews ADD COLUMN IF NOT EXISTS hidden BOOLEAN DEFAULT FALSE`);
-      const result = await db.query(
-        'SELECT id, from_id, from_name, rating, text, skill FROM reviews WHERE to_id = $1 AND COALESCE(hidden, FALSE) = FALSE ORDER BY created_at DESC',
-        [userId],
-      );
-      return result.rows.map((row: any) => ({
-        id: row.id,
-        fromId: row.from_id,
-        fromName: row.from_name,
-        rating: Number(row.rating),
-        text: row.text,
-        skill: row.skill,
-      }));
-    } catch (_) {
-      return [];
-    }
+    const result = await db.query(
+      'SELECT from_id, from_name, rating, text, skill FROM reviews WHERE to_id = $1 ORDER BY created_at DESC',
+      [userId],
+    );
+    return result.rows.map((row: any) => ({
+      fromId: row.from_id,
+      fromName: row.from_name,
+      rating: Number(row.rating),
+      text: row.text,
+      skill: row.skill,
+    }));
   }
 
   private async historyOf(userId: number) {
-    try {
-      const result = await db.query(
-        'SELECT id, title, amount, type FROM wallet_transactions WHERE user_id = $1 ORDER BY created_at DESC',
-        [userId],
-      );
-      return result.rows.map((row: any) => ({
-        id: row.id,
-        title: row.title,
-        amount: `${Number(row.amount) > 0 ? '+' : ''}${row.amount} S4H`,
-      }));
-    } catch (_) {
-      return [];
-    }
+    const result = await db.query(
+      'SELECT id, title, amount, type FROM wallet_transactions WHERE user_id = $1 ORDER BY created_at DESC',
+      [userId],
+    );
+    return result.rows.map((row: any) => ({
+      id: row.id,
+      title: row.title,
+      amount: `${Number(row.amount) > 0 ? '+' : ''}${row.amount} S4H`,
+    }));
   }
 
   async publicProfile(userId: number) {
@@ -123,33 +112,6 @@ export class AuthService {
     return this.publicUser(user, await this.reviewsOf(user.id), await this.historyOf(user.id));
   }
 
-  async alerts(userId: number) {
-    await db.query(`CREATE TABLE IF NOT EXISTS user_alerts (
-      id SERIAL PRIMARY KEY,
-      user_id INTEGER NOT NULL,
-      title VARCHAR(160) NOT NULL,
-      body TEXT NOT NULL,
-      is_read BOOLEAN NOT NULL DEFAULT FALSE,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )`);
-    await db.query(`ALTER TABLE user_alerts ADD COLUMN IF NOT EXISTS kind VARCHAR(40) DEFAULT 'info'`);
-    await db.query(`ALTER TABLE user_alerts ADD COLUMN IF NOT EXISTS ref_id INTEGER DEFAULT 0`);
-    await db.query(`ALTER TABLE user_alerts ADD COLUMN IF NOT EXISTS other_id INTEGER DEFAULT 0`);
-    await db.query(`ALTER TABLE user_alerts ADD COLUMN IF NOT EXISTS other_name VARCHAR(120) DEFAULT ''`);
-    const rows = await db.query('SELECT id, title, body, is_read, created_at, kind, ref_id, other_id, other_name FROM user_alerts WHERE user_id = $1 ORDER BY id DESC LIMIT 50', [userId]);
-    return rows.rows;
-  }
-
-  async readAlert(userId: number, id: number) {
-    await db.query('UPDATE user_alerts SET is_read = TRUE WHERE id = $1 AND user_id = $2', [id, userId]);
-    return { ok: true };
-  }
-
-  async deleteAlert(userId: number, id: number) {
-    await db.query('DELETE FROM user_alerts WHERE id = $1 AND user_id = $2', [id, userId]);
-    return { ok: true };
-  }
-
   async me(userId: number) {
     const result = await db.query('SELECT * FROM users WHERE id = $1', [userId]);
     const user = result.rows[0];
@@ -157,25 +119,33 @@ export class AuthService {
     return this.privateUser(user, await this.reviewsOf(user.id), await this.historyOf(user.id));
   }
 
-  async signup(name: string, email: string, password: string, age?: number, acceptedTerms?: boolean, city?: string, phone?: string, accessibility?: boolean, birthDate?: string, language?: string, offers?: string) {
+  async signup(name: string, email: string, password: string, age?: number, acceptedTerms?: boolean, city?: string, phone?: string, accessibility?: boolean, birthDate?: string, language?: string, willingVolunteer?: boolean) {
     this.assertPassword(password);
     if (!acceptedTerms) throw new BadRequestException('You must accept the terms');
     await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(40)`);
     await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS accessibility BOOLEAN DEFAULT FALSE`);
     await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS language VARCHAR(10)`);
     await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_date DATE`);
-    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS city_changed_at TIMESTAMPTZ`);
-    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS meeting_mode VARCHAR(20) DEFAULT 'both'`);
+    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS willing_volunteer BOOLEAN DEFAULT FALSE`);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS alerts (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        read BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
     if (Number(age || 0) < 18) throw new BadRequestException('You must be 18 or older');
-    if (!String(offers || '').trim()) throw new BadRequestException('Choose at least one skill you can offer.');
     const cleanEmail = email.trim().toLowerCase();
     const exists = await db.query('SELECT id FROM users WHERE email = $1', [cleanEmail]);
     if (exists.rows[0]) throw new BadRequestException('This email is already registered');
     const created = await db.query(
-      `INSERT INTO users (name, email, password_hash, balance, age, city, offers, terms_accepted_at, phone, accessibility, language, birth_date, city_changed_at, meeting_mode)
-       VALUES ($1, $2, $3, 1, $4, $5, $6, NOW(), $7, $8, $9, $10, NOW(), 'both')
+      `INSERT INTO users (name, email, password_hash, balance, age, city, terms_accepted_at, phone, accessibility, language, birth_date, willing_volunteer)
+       VALUES ($1, $2, $3, 1, $4, $5, NOW(), $6, $7, $8, $9, $10)
        RETURNING *`,
-      [name, cleanEmail, await this.hash(password), Number(age), (city || '').trim(), String(offers || '').trim(), (phone || '').trim(), !!accessibility, language === 'nl' ? 'nl' : 'en', birthDate || null],
+      [name, cleanEmail, await this.hash(password), Number(age), (city || '').trim(), (phone || '').trim(), !!accessibility, language === 'nl' ? 'nl' : 'en', birthDate || null, !!willingVolunteer],
     );
     const user = created.rows[0];
     await db.query(
@@ -224,26 +194,15 @@ export class AuthService {
     return { ok: true, saved: true, tokens: count.rows[0].n };
   }
   async login(email: string, password: string) {
-    const clean = email.trim().toLowerCase();
-    const typed = String(password || '').trim();
-    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMPTZ`);
-    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT`);
-    await db.query(`ALTER TABLE users ALTER COLUMN password_hash TYPE TEXT`);
-    let result = await db.query('SELECT * FROM users WHERE lower(email) = $1 ORDER BY updated_at DESC NULLS LAST, id DESC', [clean]);
-    if (!result.rows.length) {
-      result = await db.query('SELECT * FROM users WHERE lower(name) = $1 ORDER BY updated_at DESC NULLS LAST, id DESC LIMIT 5', [clean]);
+    const cleanEmail = email.trim().toLowerCase();
+    const result = await db.query('SELECT * FROM users WHERE email = $1', [cleanEmail]);
+    const user = result.rows[0];
+    if (!user || !(await this.passwordMatches(password, user.password_hash))) {
+      throw new UnauthorizedException('Email or password is wrong');
     }
-    if (!result.rows.length) throw new UnauthorizedException('No account with this email exists on the server.');
-    let user = null;
-    for (const row of result.rows) {
-      if (await this.passwordMatches(typed, row.password_hash)) {
-        user = row;
-        break;
-      }
-    }
-    if (!user) throw new UnauthorizedException('The password is wrong for this account.');
     if (user.is_suspended) throw new UnauthorizedException('Account suspended');
-    await this.upgradeHash(user.id, typed, user.password_hash);
+    if (!user.email_verified) throw new UnauthorizedException('Email not verified');
+    await this.upgradeHash(user.id, password, user.password_hash);
     await db.query('UPDATE users SET last_login = NOW(), updated_at = NOW() WHERE id = $1', [user.id]);
     return {
       token: signToken(user.id),
@@ -253,49 +212,42 @@ export class AuthService {
 
 
   async googleLogin(idToken: string) {
-    try {
-      if (!idToken) throw new UnauthorizedException('Google sign-in failed');
-      const res = await fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken));
-      if (!res.ok) throw new UnauthorizedException('Google token is invalid');
-      const payload = await res.json() as { email?: string; email_verified?: string; name?: string; picture?: string };
-      const cleanEmail = String(payload.email || '').trim().toLowerCase();
-      if (!cleanEmail) throw new UnauthorizedException('Google account has no email');
-      await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMPTZ`);
-      await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS meeting_mode VARCHAR(20) DEFAULT 'both'`);
-      await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS photo_url TEXT`);
-      await db.query(`ALTER TABLE users ALTER COLUMN photo_url TYPE TEXT`);
-      await db.query(`ALTER TABLE users ALTER COLUMN password_hash TYPE TEXT`);
-      let found = await db.query('SELECT * FROM users WHERE lower(email) = $1 ORDER BY id DESC', [cleanEmail]);
-      let user = found.rows[0];
-      if (!user) {
-        const created = await db.query(
-          `INSERT INTO users (name, email, password_hash, balance, age, city, email_verified, terms_accepted_at, meeting_mode)
-           VALUES ($1, $2, $3, 1, 18, '', TRUE, NOW(), 'both')
-           RETURNING *`,
-          [payload.name || cleanEmail.split('@')[0], cleanEmail, await this.hash('google-' + Date.now())],
-        );
-        user = created.rows[0];
-        try {
-          await db.query(
-            `INSERT INTO wallet_transactions (user_id, type, amount, title)
-             VALUES ($1, 'BONUS', 1, 'Starter bonus')`,
-            [user.id],
-          );
-        } catch (_) {}
-      } else if (user.is_suspended) {
-        throw new UnauthorizedException('Account suspended');
-      } else {
-        await db.query('UPDATE users SET email_verified = TRUE, last_login = NOW(), updated_at = NOW() WHERE id = $1', [user.id]);
-        user.email_verified = true;
-      }
-      return {
-        token: signToken(user.id),
-        user: this.privateUser(user, await this.reviewsOf(user.id), await this.historyOf(user.id)),
-      };
-    } catch (error) {
-      if (error instanceof UnauthorizedException || error instanceof BadRequestException) throw error;
-      throw new BadRequestException(error instanceof Error ? error.message : 'Google login failed');
+    if (!idToken) throw new UnauthorizedException('Google sign-in failed');
+    const res = await fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken));
+    if (!res.ok) throw new UnauthorizedException('Google token is invalid');
+    const payload = await res.json() as { email?: string; email_verified?: string; name?: string; picture?: string };
+    const cleanEmail = String(payload.email || '').trim().toLowerCase();
+    if (!cleanEmail) throw new UnauthorizedException('Google account has no email');
+    if (payload.email_verified !== 'true' && payload.email_verified !== true as any) {
+      throw new UnauthorizedException('Google email is not verified');
     }
+    let found = await db.query('SELECT * FROM users WHERE email = $1', [cleanEmail]);
+    let user = found.rows[0];
+    if (!user) {
+      const created = await db.query(
+        `INSERT INTO users (name, email, password_hash, balance, age, city, email_verified, terms_accepted_at, photo_url)
+         VALUES ($1, $2, $3, 1, 18, '', TRUE, NOW(), $4)
+         RETURNING *`,
+        [payload.name || cleanEmail.split('@')[0], cleanEmail, await this.hash('google-' + Date.now()), payload.picture || ''],
+      );
+      user = created.rows[0];
+      await db.query(
+        `INSERT INTO wallet_transactions (user_id, type, amount, title)
+         VALUES ($1, 'BONUS', 1, 'Starter bonus')`,
+        [user.id],
+      );
+    } else {
+      if (user.is_suspended) throw new UnauthorizedException('Account suspended');
+      await db.query(
+        'UPDATE users SET email_verified = TRUE, last_login = NOW(), updated_at = NOW() WHERE id = $1',
+        [user.id],
+      );
+      user.email_verified = true;
+    }
+    return {
+      token: signToken(user.id),
+      user: this.privateUser(user, await this.reviewsOf(user.id), await this.historyOf(user.id)),
+    };
   }
 
   async verifyEmail(token: string) {
@@ -383,49 +335,25 @@ export class AuthService {
     gender?: string;
     age?: number;
     language?: string;
-    meetingMode?: string;
   }) {
-    const ageNumber = Number(body.age || 0);
-    const age = Number.isFinite(ageNumber) && ageNumber > 0 ? Math.floor(ageNumber) : null;
-    if (age && age < 18) {
+    const age = Number(body.age || 0);
+    if (age > 0 && age < 18) {
       throw new BadRequestException('Skill4Handel is only for users 18 and older');
     }
     const language = body.language === 'nl' ? 'nl' : 'en';
-    await db.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS language VARCHAR(10) DEFAULT 'en'");
-    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS city_changed_at TIMESTAMPTZ`);
-    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS meeting_mode VARCHAR(20) DEFAULT 'both'`);
-    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS gender VARCHAR(40) DEFAULT ''`);
-    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS needs TEXT DEFAULT ''`);
-    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS age INTEGER`);
-    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`);
-    if (!String(body.offers || '').trim()) throw new BadRequestException('Choose at least one skill you can offer.');
-    const current = (await db.query('SELECT city, city_changed_at FROM users WHERE id = $1', [body.id])).rows[0];
-    const nextCity = String(body.city || '').trim().slice(0, 120);
-    const cityChanged = current && nextCity && nextCity !== String(current.city || '');
-    if (cityChanged && current.city_changed_at) {
-      const days = (Date.now() - new Date(current.city_changed_at).getTime()) / 864e5;
-      if (days < 30) throw new BadRequestException('You can change your city once every 30 days.');
-    }
-    try {
-      const cityChangedAt = cityChanged ? new Date() : (current?.city_changed_at || null);
-      const result = await db.query(
-        `UPDATE users
-         SET name = $1,
-             city = $2,
-             city_changed_at = $3,
-             offers = $4, needs = $5, gender = $6, age = $7, language = $8, meeting_mode = $9, updated_at = NOW()
-         WHERE id = $10
-         RETURNING *`,
-        [String(body.name || '').slice(0, 120), nextCity, cityChangedAt, String(body.offers || ''), String(body.needs || ''), String(body.gender || '').slice(0, 40), age, language, String(body.meetingMode || 'both').slice(0, 20), body.id],
-      );
-      const user = result.rows[0];
-      if (!user) throw new UnauthorizedException('User not found');
-      return { user: this.publicUser(user, await this.reviewsOf(user.id), await this.historyOf(user.id)) };
-    } catch (error) {
-      if (error instanceof BadRequestException || error instanceof UnauthorizedException) throw error;
-      console.log('PROFILE SAVE', error);
-      throw new BadRequestException(error instanceof Error ? error.message : 'Profile could not be saved');
-    }
+    await db.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS language VARCHAR(8) DEFAULT 'en'");
+    const result = await db.query(
+      `UPDATE users
+       SET name = $1,
+           city = CASE WHEN COALESCE(city, '') = '' THEN $2 ELSE city END,
+           offers = $3, needs = $4, gender = $5, age = $6, language = $7, updated_at = NOW()
+       WHERE id = $8
+       RETURNING *`,
+      [body.name, body.city, body.offers, body.needs, body.gender || '', age || null, language, body.id],
+    );
+    const user = result.rows[0];
+    if (!user) throw new UnauthorizedException('User not found');
+    return { user: this.publicUser(user, await this.reviewsOf(user.id), await this.historyOf(user.id)) };
   }
 
   async setPhoto(id: number, photoUrl: string) {
@@ -469,54 +397,23 @@ export class AuthService {
     }
     const recent = await db.query(
       `SELECT id FROM reviews
-       WHERE from_id = $1 AND to_id = $2 AND created_at > NOW() - INTERVAL '14 days'`,
+       WHERE from_id = $1 AND to_id = $2 AND created_at > NOW() - INTERVAL '24 hours'`,
       [fromId, toId],
     );
     if (recent.rows[0]) {
-      throw new BadRequestException('You can leave one review for this person every 14 days.');
+      throw new BadRequestException('You can review this person once every 24 hours.');
     }
-    await db.query(`ALTER TABLE reviews ADD COLUMN IF NOT EXISTS hidden BOOLEAN DEFAULT FALSE`);
     await db.query(
       `INSERT INTO reviews (from_id, to_id, from_name, rating, text, skill)
        VALUES ($1, $2, $3, $4, $5, $6)`,
       [fromId, toId, body.fromName, body.rating, body.text || '', body.skill || ''],
     );
-    const avg = await db.query('SELECT AVG(rating) AS rating FROM reviews WHERE to_id = $1 AND COALESCE(hidden, FALSE) = FALSE', [toId]);
+    const avg = await db.query('SELECT AVG(rating) AS rating FROM reviews WHERE to_id = $1', [toId]);
     await db.query('UPDATE users SET rating = $1 WHERE id = $2', [
       Number(avg.rows[0].rating || 0).toFixed(1),
       toId,
     ]);
     return this.me(toId);
-  }
-
-
-  async reportReview(userId: number, reviewId: number, reason: string) {
-    await db.query(`ALTER TABLE reviews ADD COLUMN IF NOT EXISTS hidden BOOLEAN DEFAULT FALSE`);
-    const review = (await db.query(
-      `SELECT r.*, a.name AS from_name, b.name AS to_name
-       FROM reviews r
-       LEFT JOIN users a ON a.id = r.from_id
-       LEFT JOIN users b ON b.id = r.to_id
-       WHERE r.id = $1`,
-      [reviewId],
-    )).rows[0];
-    if (!review) throw new BadRequestException('Review not found');
-    const reporter = (await db.query('SELECT name FROM users WHERE id = $1', [userId])).rows[0];
-    const text = [
-      'Review report',
-      `Review #${review.id}`,
-      `From: ${review.from_name || review.from_id}`,
-      `To: ${review.to_name || review.to_id}`,
-      `Stars: ${review.rating}`,
-      `Text: ${review.text || ''}`,
-      `Reason: ${reason || 'Not specified'}`,
-    ].join('\n');
-    await db.query(
-      `INSERT INTO tickets (user_id, name, type, other_name, text, status)
-       VALUES ($1, $2, 'review_report', $3, $4, 'open')`,
-      [userId, reporter?.name || 'Member', review.from_name || 'Member', text],
-    );
-    return { ok: true };
   }
 
   async transfer(body: { fromId: number; toId: number; amount: number; title: string }) {
@@ -552,6 +449,60 @@ export class AuthService {
     return { ok: true };
   }
 
+
+  async alerts(userId: number) {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS alerts (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        read BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    const result = await db.query(
+      `SELECT id, title, body, read, created_at
+       FROM alerts WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100`,
+      [userId],
+    );
+    return result.rows.map((row: any) => ({
+      id: row.id,
+      title: row.title,
+      body: row.body,
+      read: !!row.read,
+      createdAt: row.created_at,
+    }));
+  }
+
+  async readAlert(userId: number, id: number) {
+    await db.query(
+      `UPDATE alerts SET read = TRUE WHERE id = $1 AND user_id = $2`,
+      [id, userId],
+    );
+    return { ok: true };
+  }
+
+  async clearAlerts(userId: number) {
+    await db.query(`DELETE FROM alerts WHERE user_id = $1`, [userId]);
+    return { ok: true };
+  }
+
+  async listTickets(userId: number) {
+    const result = await db.query(
+      `SELECT id, type, other_name, text, created_at
+       FROM tickets WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100`,
+      [userId],
+    );
+    return result.rows.map((row: any) => ({
+      id: row.id,
+      type: row.type,
+      otherName: row.other_name,
+      text: row.text,
+      createdAt: row.created_at,
+    }));
+  }
+
   async addTicket(body: any) {
     await db.query(
       `INSERT INTO tickets (user_id, name, type, other_name, text)
@@ -559,23 +510,6 @@ export class AuthService {
       [body.userId, body.name, body.type || 'support', body.otherName || '', body.text],
     );
     return { ok: true };
-  }
-
-  async listTickets(userId: number) {
-    await db.query(`ALTER TABLE tickets ADD COLUMN IF NOT EXISTS admin_reply TEXT`);
-    const rows = await db.query(
-      `SELECT id, type, text, status, admin_reply, created_at
-       FROM tickets WHERE user_id = $1 ORDER BY id DESC LIMIT 30`,
-      [userId],
-    );
-    return rows.rows.map((row: any) => ({
-      id: row.id,
-      type: row.type,
-      text: row.text,
-      status: row.status || 'open',
-      adminReply: row.admin_reply || '',
-      createdAt: row.created_at,
-    }));
   }
 
   async block(userId: number, otherId: number) {

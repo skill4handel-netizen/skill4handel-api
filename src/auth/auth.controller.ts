@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Header, Param, Post, Query, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, Post, Query, Req } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { NotifyService } from '../notify/notify.service';
 import { userIdFromRequest } from './http-user';
@@ -23,9 +23,9 @@ export class AuthController {
     return this.authService.readAlert(userId, Number(body.id));
   }
 
-  @Delete('alerts/:id')
-  deleteAlert(@Req() req: any, @Param('id') id: string) {
-    return this.authService.deleteAlert(userIdFromRequest(req), Number(id));
+  @Post('alerts/clear')
+  clearAlerts(@Req() req: any) {
+    return this.authService.clearAlerts(userIdFromRequest(req));
   }
 
   @Get('me')
@@ -47,7 +47,7 @@ export class AuthController {
       body.accessibility,
       body.birthDate,
       body.language,
-      body.offers,
+      body.willingVolunteer,
     );
   }
 
@@ -177,11 +177,6 @@ export class AuthController {
     return this.authService.addReview({ ...body, fromId: userIdFromRequest(req) });
   }
 
-  @Post('review/report')
-  reportReview(@Req() req: any, @Body() body: any) {
-    return this.authService.reportReview(userIdFromRequest(req), Number(body.reviewId), String(body.reason || ''));
-  }
-
   @Post('transfer')
   transfer(@Req() req: any, @Body() body: any) {
     return this.authService.transfer({ ...body, fromId: userIdFromRequest(req), userId: userIdFromRequest(req) });
@@ -192,14 +187,14 @@ export class AuthController {
     return this.authService.deleteTransaction(userIdFromRequest(req), Number(id));
   }
 
-  @Post('ticket')
-  ticket(@Req() req: any, @Body() body: any) {
-    return this.authService.addTicket({ ...body, userId: userIdFromRequest(req) });
-  }
-
   @Get('tickets')
   tickets(@Req() req: any) {
     return this.authService.listTickets(userIdFromRequest(req));
+  }
+
+  @Post('ticket')
+  ticket(@Req() req: any, @Body() body: any) {
+    return this.authService.addTicket({ ...body, userId: userIdFromRequest(req) });
   }
 
   @Get('blocks')
