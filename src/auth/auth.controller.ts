@@ -28,6 +28,11 @@ export class AuthController {
     return this.authService.clearAlerts(userIdFromRequest(req));
   }
 
+  @Post('alerts/delete')
+  deleteAlert(@Req() req: any, @Body() body: any) {
+    return this.authService.deleteAlert(userIdFromRequest(req), Number(body.id));
+  }
+
   @Get('me')
   me(@Req() req: any) {
     return this.authService.me(userIdFromRequest(req));

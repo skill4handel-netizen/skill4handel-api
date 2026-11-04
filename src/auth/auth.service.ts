@@ -72,6 +72,7 @@ export class AuthService {
       emailVerified: !!user.email_verified,
       accessibility: !!user.accessibility,
       willingVolunteer: !!user.willing_volunteer,
+      birthDate: user.birth_date || '',
     };
   }
 
@@ -368,6 +369,10 @@ export class AuthService {
     gender?: string;
     age?: number;
     language?: string;
+    phone?: string;
+    accessibility?: boolean;
+    willingVolunteer?: boolean;
+    birthDate?: string;
   }) {
     const age = Number(body.age || 0);
     if (age > 0 && age < 18) {
@@ -375,14 +380,24 @@ export class AuthService {
     }
     const language = body.language === 'nl' ? 'nl' : 'en';
     await db.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS language VARCHAR(8) DEFAULT 'en'");
+    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(40)`);
+    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS accessibility BOOLEAN DEFAULT FALSE`);
+    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS willing_volunteer BOOLEAN DEFAULT FALSE`);
+    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_date DATE`);
     const result = await db.query(
       `UPDATE users
        SET name = $1,
-           city = CASE WHEN COALESCE(city, '') = '' THEN $2 ELSE city END,
-           offers = $3, needs = $4, gender = $5, age = $6, language = $7, updated_at = NOW()
-       WHERE id = $8
+           city = $2,
+           offers = $3, needs = $4, gender = $5, age = $6, language = $7,
+           phone = $8, accessibility = $9, willing_volunteer = $10,
+           birth_date = COALESCE($11, birth_date), updated_at = NOW()
+       WHERE id = $12
        RETURNING *`,
-      [body.name, body.city, body.offers, body.needs, body.gender || '', age || null, language, body.id],
+      [
+        body.name, body.city, body.offers, body.needs, body.gender || '', age || null, language,
+        (body.phone || '').trim(), !!body.accessibility, !!body.willingVolunteer,
+        body.birthDate || null, body.id,
+      ],
     );
     const user = result.rows[0];
     if (!user) throw new UnauthorizedException('User not found');
@@ -518,6 +533,11 @@ export class AuthService {
 
   async clearAlerts(userId: number) {
     await db.query(`DELETE FROM alerts WHERE user_id = $1`, [userId]);
+    return { ok: true };
+  }
+
+  async deleteAlert(userId: number, id: number) {
+    await db.query(`DELETE FROM alerts WHERE id = $1 AND user_id = $2`, [id, userId]);
     return { ok: true };
   }
 
