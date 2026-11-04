@@ -70,6 +70,7 @@ export class AuthService {
       reviews,
       rating,
       emailVerified: !!user.email_verified,
+      passwordSet: user.password_set !== false,
       accessibility: !!user.accessibility,
       willingVolunteer: !!user.willing_volunteer,
       birthDate: user.birth_date || '',
@@ -258,9 +259,10 @@ export class AuthService {
     let found = await db.query('SELECT * FROM users WHERE email = $1', [cleanEmail]);
     let user = found.rows[0];
     if (!user) {
+      await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS password_set BOOLEAN DEFAULT TRUE`);
       const created = await db.query(
-        `INSERT INTO users (name, email, password_hash, balance, age, city, email_verified, terms_accepted_at, photo_url)
-         VALUES ($1, $2, $3, 1, 18, '', TRUE, NOW(), $4)
+        `INSERT INTO users (name, email, password_hash, balance, age, city, email_verified, terms_accepted_at, photo_url, password_set)
+         VALUES ($1, $2, $3, 1, 18, '', TRUE, NOW(), $4, FALSE)
          RETURNING *`,
         [payload.name || cleanEmail.split('@')[0], cleanEmail, await this.hash('google-' + Date.now()), payload.picture || ''],
       );
@@ -340,6 +342,22 @@ export class AuthService {
     await db.query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [
       await this.hash(password),
       row.user_id,
+    ]);
+    return { ok: true };
+  }
+
+  async setPassword(userId: number, newPassword: string) {
+    this.assertPassword(newPassword);
+    await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS password_set BOOLEAN DEFAULT TRUE`);
+    const result = await db.query('SELECT id, password_set FROM users WHERE id = $1', [userId]);
+    const user = result.rows[0];
+    if (!user) throw new BadRequestException('Account not found');
+    if (user.password_set !== false) {
+      throw new BadRequestException('This account already has a password. Use change password.');
+    }
+    await db.query('UPDATE users SET password_hash = $1, password_set = TRUE, updated_at = NOW() WHERE id = $2', [
+      await this.hash(newPassword),
+      userId,
     ]);
     return { ok: true };
   }

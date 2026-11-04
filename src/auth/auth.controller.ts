@@ -162,6 +162,11 @@ export class AuthController {
     </body></html>`;
   }
 
+  @Post('set-password')
+  setPassword(@Req() req: any, @Body() body: any) {
+    return this.authService.setPassword(userIdFromRequest(req), body.newPassword || '');
+  }
+
   @Post('change-password')
   changePassword(@Req() req: any, @Body() body: any) {
     return this.authService.changePassword(userIdFromRequest(req), body.currentPassword, body.newPassword);
