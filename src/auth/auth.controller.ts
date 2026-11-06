@@ -131,27 +131,53 @@ export class AuthController {
   @Header('Content-Type', 'text/html; charset=utf-8')
   resetForm(@Query('token') token: string) {
     const safe = encodeURIComponent(token || '');
-    return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="font-family:sans-serif;background:#f4f7fb;padding:32px">
-      <div style="max-width:460px;margin:auto;background:#fff;border-radius:20px;padding:28px;box-shadow:0 8px 24px rgba(16,24,40,.08)">
-      <div style="width:56px;height:56px;border-radius:16px;background:#2f6fed;color:#fff;display:flex;align-items:center;justify-content:center;font-size:28px">S</div>
-      <h2 style="font-size:28px;margin:16px 0 8px">Choose a new password</h2>
-      <p style="color:#667085;font-size:16px">This link expires in two hours and can be used once.</p>
-      <p style="background:#eef4ff;border-radius:12px;padding:12px;color:#1d4ed8">Use at least 8 characters, including one letter and one number.</p>
-      <p><input id="password" type="password" placeholder="New password" style="width:100%;padding:16px;font-size:18px;border:1px solid #d0d5dd;border-radius:12px"></p>
-      <p><button id="go" style="width:100%;padding:16px;font-size:18px;border:0;border-radius:12px;background:#2f6fed;color:#fff">Update password</button></p>
-      <p id="msg" style="font-size:16px"></p>
+    return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: sans-serif; background: #f4f7fb; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+      .card { width: 100%; max-width: 420px; background: #fff; border-radius: 20px; padding: 28px; box-shadow: 0 8px 24px rgba(16,24,40,.08); }
+      .logo { width: 56px; height: 56px; border-radius: 16px; background: #2f6fed; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 28px; }
+      h2 { font-size: 26px; margin: 16px 0 8px; }
+      .muted { color: #667085; font-size: 15px; margin: 0 0 16px; }
+      .rule { background: #eef4ff; border-radius: 12px; padding: 12px; color: #1d4ed8; margin: 0 0 16px; }
+      input, button { width: 100%; padding: 16px; font-size: 16px; border-radius: 12px; }
+      input { border: 1px solid #d0d5dd; margin-bottom: 12px; }
+      button { border: 0; background: #2f6fed; color: #fff; font-weight: 700; }
+      #msg { min-height: 22px; margin-top: 12px; font-size: 15px; }
+      .bad { color: #b42318; }
+      .ok { color: #067647; }
+    </style></head><body>
+      <div class="card">
+        <div class="logo">S</div>
+        <h2>Choose a new password</h2>
+        <p class="muted">This link expires in two hours and can be used once.</p>
+        <p class="rule">Use at least 8 characters, including one letter and one number.</p>
+        <input id="password" type="password" placeholder="New password">
+        <button id="go">Update password</button>
+        <p id="msg"></p>
       </div>
       <script>
         document.getElementById('go').onclick = async function() {
           const password = document.getElementById('password').value;
+          const msg = document.getElementById('msg');
           const res = await fetch('/auth/reset', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ token: decodeURIComponent('${safe}'), password })
           });
-          document.getElementById('msg').textContent = res.ok
-            ? 'Password updated. Open the app and log in.'
-            : 'This link is invalid or has expired.';
+          let text = '';
+          try { text = await res.text(); } catch (e) {}
+          let message = 'Password updated. Open the app and log in.';
+          if (!res.ok) {
+            try {
+              const data = JSON.parse(text);
+              message = data.message || 'Use at least 8 characters, including one letter and one number.';
+              if (Array.isArray(message)) message = message[0];
+            } catch (e) {
+              message = text || 'Use at least 8 characters, including one letter and one number.';
+            }
+          }
+          msg.className = res.ok ? 'ok' : 'bad';
+          msg.textContent = message;
         };
       </script>
     </body></html>`;
