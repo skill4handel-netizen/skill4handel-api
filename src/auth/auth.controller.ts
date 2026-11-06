@@ -131,12 +131,16 @@ export class AuthController {
   @Header('Content-Type', 'text/html; charset=utf-8')
   resetForm(@Query('token') token: string) {
     const safe = encodeURIComponent(token || '');
-    return `<!doctype html><html><body style="font-family:sans-serif;padding:32px;max-width:420px;margin:auto">
-      <h2>Skill4Handel</h2>
-      <p>Choose a new password. This link expires in two hours and can be used once.</p>
-      <p><input id="password" type="password" placeholder="New password" minlength="6" style="width:100%;padding:10px"></p>
-      <p><button id="go" style="padding:10px 16px">Update password</button></p>
-      <p id="msg"></p>
+    return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="font-family:sans-serif;background:#f4f7fb;padding:32px">
+      <div style="max-width:460px;margin:auto;background:#fff;border-radius:20px;padding:28px;box-shadow:0 8px 24px rgba(16,24,40,.08)">
+      <div style="width:56px;height:56px;border-radius:16px;background:#2f6fed;color:#fff;display:flex;align-items:center;justify-content:center;font-size:28px">S</div>
+      <h2 style="font-size:28px;margin:16px 0 8px">Choose a new password</h2>
+      <p style="color:#667085;font-size:16px">This link expires in two hours and can be used once.</p>
+      <p style="background:#eef4ff;border-radius:12px;padding:12px;color:#1d4ed8">Use at least 8 characters, including one letter and one number.</p>
+      <p><input id="password" type="password" placeholder="New password" style="width:100%;padding:16px;font-size:18px;border:1px solid #d0d5dd;border-radius:12px"></p>
+      <p><button id="go" style="width:100%;padding:16px;font-size:18px;border:0;border-radius:12px;background:#2f6fed;color:#fff">Update password</button></p>
+      <p id="msg" style="font-size:16px"></p>
+      </div>
       <script>
         document.getElementById('go').onclick = async function() {
           const password = document.getElementById('password').value;

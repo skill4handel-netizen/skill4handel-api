@@ -527,8 +527,9 @@ export class AuthService {
         created_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
+    await db.query(`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS data TEXT`);
     const result = await db.query(
-      `SELECT id, title, body, read, created_at
+      `SELECT id, title, body, read, created_at, data
        FROM alerts WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100`,
       [userId],
     );
@@ -538,6 +539,7 @@ export class AuthService {
       body: row.body,
       read: !!row.read,
       createdAt: row.created_at,
+      data: (() => { try { return JSON.parse(row.data || '{}'); } catch { return {}; } })(),
     }));
   }
 

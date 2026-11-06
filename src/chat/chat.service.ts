@@ -83,9 +83,10 @@ export class ChatService {
           created_at TIMESTAMPTZ DEFAULT NOW()
         )
       `);
+      await db.query(`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS data TEXT`);
       await db.query(
-        `INSERT INTO alerts (user_id, title, body) VALUES ($1, $2, $3)`,
-        [userId, loc.title, loc.body],
+        `INSERT INTO alerts (user_id, title, body, data) VALUES ($1, $2, $3, $4)`,
+        [userId, loc.title, loc.body, JSON.stringify(data || {})],
       );
       await this.notify.sendToUser(userId, loc.title, loc.body, data);
     } catch (error) {
