@@ -178,16 +178,20 @@ export class ChatService {
       ? 'The offer expired because the scheduled time passed without a response. Both members may start a new request.'
       : 'The 24-hour response period ended. This offer was cancelled automatically. It can no longer be edited.';
     try {
-      await db.query(`INSERT INTO messages (chat_id, from_id, type, text) VALUES ($1, $2, 'text', $3)`, [
-        chat.id,
-        offer.proposed_by || chat.user_a_id,
-        reason,
-      ]);
-      await db.query(`UPDATE chats SET last_message = $1, last_from_id = $2, updated_at = NOW() WHERE id = $3`, [
-        'Offer closed',
-        offer.proposed_by || chat.user_a_id,
-        chat.id,
-      ]);
+      const existing = await db.query(
+        `SELECT id FROM messages WHERE chat_id = $1 AND type = 'system' AND text = $2 LIMIT 1`,
+        [chat.id, reason],
+      );
+      if (!existing.rows[0]) {
+        await db.query(`INSERT INTO messages (chat_id, from_id, type, text) VALUES ($1, 0, 'system', $2)`, [
+          chat.id,
+          reason,
+        ]);
+        await db.query(`UPDATE chats SET last_message = $1, last_from_id = 0, updated_at = NOW() WHERE id = $2`, [
+          'Offer closed',
+          chat.id,
+        ]);
+      }
     } catch (_) {}
     try {
       await this.ping(Number(chat.user_a_id), 'Offer closed', reason, { type: 'offer', chatId: String(chat.id) });
