@@ -447,6 +447,14 @@ export class ChatService {
     const tokens = Math.min(10, Math.max(0, Number(body.extraTokens) || 0));
     const isCounter = !!existing;
     const requested = isCounter ? existing.skillRequested : body.skillRequested;
+    const level = body.volunteer
+      ? 'Volunteer'
+      : tokens > 0 && body.skillOffered
+        ? 'skill+tokens'
+        : tokens > 0
+          ? 'tokens'
+          : 'skill';
+    await db.query(`ALTER TABLE exchange_offers ALTER COLUMN level TYPE VARCHAR(40)`).catch(() => undefined);
     await db.query(
       `INSERT INTO exchange_offers
         (chat_id, proposed_by, skill_requested, skill_offered, pay_with_tokens, extra_tokens, duration, level, mode, location, scheduled_at, status)
@@ -454,7 +462,7 @@ export class ChatService {
       [
         chatId, userId, requested, body.volunteer ? '' : body.skillOffered || '',
         !!body.payWithTokens || tokens > 0, tokens, body.duration,
-        body.volunteer ? 'Volunteer' : body.level, body.mode, body.location || '',
+        level, body.mode, body.location || '',
         scheduledAt, isCounter ? 'COUNTERED' : 'PROPOSED',
       ],
     );
