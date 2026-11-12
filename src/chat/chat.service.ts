@@ -450,9 +450,9 @@ export class ChatService {
     const rawLevel = String(body.volunteer ? 'volunteer' : body.level || '').toLowerCase();
     const level = body.volunteer || rawLevel.includes('volunteer')
       ? 'volunteer'
-      : rawLevel.includes('skill+tokens') || rawLevel.includes('skill plus') || rawLevel.includes('plus s4h') || (tokens > 0 && requested)
+      : rawLevel.includes('skill+tokens') || rawLevel.includes('skill plus') || rawLevel.includes('plus s4h') || rawLevel === 'both'
         ? 'skill+tokens'
-        : tokens > 0 || rawLevel.includes('tokens')
+        : rawLevel.includes('tokens') || (tokens > 0 && !rawLevel.includes('skill'))
           ? 'tokens'
           : 'skill';
     await db.query(`ALTER TABLE exchange_offers ALTER COLUMN level TYPE VARCHAR(80)`).catch(() => undefined);
