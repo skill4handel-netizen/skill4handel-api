@@ -445,6 +445,12 @@ export class ChatService {
     }
     if (!existing) await this.assertSwapLimit(chat.user_a_id, chat.user_b_id);
     const tokens = Math.min(10, Math.max(0, Number(body.extraTokens) || 0));
+    if (tokens > 0) {
+      const payer = await db.query('SELECT balance FROM users WHERE id = $1', [userId]);
+      if (Number(payer.rows[0]?.balance || 0) < tokens) {
+        throw new BadRequestException('You do not have enough S4H tokens for this offer');
+      }
+    }
     const isCounter = !!existing;
     const requested = isCounter ? existing.skillRequested : body.skillRequested;
     const rawLevel = String(body.volunteer ? 'volunteer' : body.level || '').toLowerCase();
