@@ -447,7 +447,14 @@ export class ChatService {
     const tokens = Math.min(10, Math.max(0, Number(body.extraTokens) || 0));
     const isCounter = !!existing;
     const requested = isCounter ? existing.skillRequested : body.skillRequested;
-    const level = String(body.volunteer ? 'Volunteer' : body.level || 'skill').slice(0, 80);
+    const rawLevel = String(body.volunteer ? 'volunteer' : body.level || '').toLowerCase();
+    const level = body.volunteer || rawLevel.includes('volunteer')
+      ? 'volunteer'
+      : rawLevel.includes('skill+tokens') || rawLevel.includes('skill plus') || rawLevel.includes('plus s4h') || (tokens > 0 && requested)
+        ? 'skill+tokens'
+        : tokens > 0 || rawLevel.includes('tokens')
+          ? 'tokens'
+          : 'skill';
     await db.query(`ALTER TABLE exchange_offers ALTER COLUMN level TYPE VARCHAR(80)`).catch(() => undefined);
     await db.query(
       `INSERT INTO exchange_offers
@@ -462,7 +469,9 @@ export class ChatService {
     );
     await db.query(`INSERT INTO messages (chat_id, from_id, type, text) VALUES ($1, $2, 'text', $3)`, [
       chatId, userId,
-      isCounter ? 'A counter-offer has been sent.' : 'An offer has been sent. If there is no response within 24 hours, it will be cancelled.',
+      isCounter
+        ? `A counter-offer has been sent. Type: ${level}.`
+        : `An offer has been sent. Type: ${level}. If there is no response within 24 hours, it will be cancelled.`,
     ]);
     await db.query('UPDATE chats SET last_message = $1, last_from_id = $2, updated_at = NOW() WHERE id = $3', [
       isCounter ? 'Counter offer' : 'New swap offer', userId, chatId,
